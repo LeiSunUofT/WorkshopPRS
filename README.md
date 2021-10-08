@@ -10,7 +10,9 @@ For Statistical Fundamentals of PRS, there are six sets of slides, including
 - PRS-intro401-heterogeneity: heterogeneity and transportabiliy
 - PRS-intro501-LD: linkage disequilibrium
 
-Both the .pdf and .Rmd files will be uploaded shortly after the workshop. Other workshop materials will also be released after the workshop.
+001 and 101 slides are posted now, and all .pdf and .Rmd files will be uploaded shortly after the workshop. 
+
+(Other workshop materials will also be released after the workshop.)
 
 For the six sets of slides on Statistical Fundamentals of PRS, although they were presented in two hours, only some of the materials could be covered. Substantial longer time can be spent on each set depending on the educational setting.   
 
