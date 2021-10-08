@@ -1,0 +1,445 @@
+---
+title: Polygenic Risk Score (PRS) Introduction 001 
+subtitle: Overview and topic-stratified PRS reference list
+author: Drs. Lei Sun, Wei Deng, Yanyan Zhao
+institute:
+  - Department of Statistical Sciences, FAS  
+  - Division of Biostatistics, DLSPH  
+  - University of Toronto    
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  beamer_presentation: 
+    pandoc_args: ["--extract-media", "./extracted-image"]
+# output: word_document
+# output: html_document
+# output: pdf_document
+header-includes:
+ - \usepackage{fancyhdr}
+ - \usepackage{amsmath,latexsym}
+ - \hypersetup{colorlinks=true, linkcolor=blue}
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(echo = TRUE)
+# knitr::opts_chunk$set(out.width = '70%') 
+set.seed(1234) 
+library(knitr)
+library(kableExtra)
+library(plotly)
+library(fields) 
+```
+
+
+##  
+![](https://utstat.toronto.edu/sun/art/fig-PRSteam.png){width=100%} 
+![](https://utstat.toronto.edu/sun/art/fig-PRSteamlogo.png){width=100%}  
+
+## Outline of the whole PRS workshop 
+
+\begin{enumerate}
+\item Statistical fundamentals of PRS  
+\item Real-life users FAQ \& solutions    
+\item Hands-on exercises  (restricted)
+\item Advanced topics  
+\item Clinical implications  
+\item Discussion
+\end{enumerate}
+
+## Outline of 1. Statistical Fundamentals of PRS  
+\vspace{-0.5cm}  
+[Lei Sun](http://www.utstat.toronto.edu/sun/), [Wei Deng](https://github.com/WeiAkaneDeng) and [Yanyan Zhao](https://sites.google.com/view/yanyan-zhao)  
+\vspace{0.5cm}
+
+\begin{itemize}
+\item PRS-intro001-overview: a topic-stratified PRS reference list
+\item PRS-intro101-foundation: GWAS, $h^2$ and prediction
+\item {\bf PRS-intro201-basic}: PRS calculation and performance evaluation
+\item {\bf PRS-intro301-basic-plus}: some obvious or not so obvious follow-up Qs
+\item {\bf PRS-intro401-heterogeneity}: heterogeneity and transportabiliy
+\item PRS-intro501-LD: linkage disequilibrium
+\end{itemize}
+
+## Misc notes
+
+\begin{itemize}
+\item {\bf Deeper} understanding of the {\bf basic} PRS
+\item Step-by-step {\bf R-assisted `hand calculation'} with (almost) {\bf no black box} 
+\item {\bf Reproducible} examples and results
+\end{itemize}
+
+[All .pdf and source .Rmd files](https://github.com/LeiSunUofT/WorkshopPRS) will be made open resource *soon after* the IGES workshop at https://github.com/LeiSunUofT  
+\vspace{24pt}
+
+\begin{itemize}
+\item Workshop teaching: $\approx$2 hours, {\bf covering only some of the notes.} {\color{red}{\bf Please go over the 001 and 101 slides distributed prior to the workshop carefully, so that more workshop time can be dedicated to other materials. Thank you!}}
+\item If interested: $\infty$ hours of self-study 
+\item If interested: quizzes throughout the lecture notes
+\end{itemize}
+
+## Goal of this lecture
+
+\begin{itemize}
+\item Overview of the topics to be covered in 1. statistical fundamentals of PRS of this workshop.
+\vspace{6pt}
+
+\item PRS is intuitive with a simple expression:
+$$PRS_i=\sum_{j=1}^{J} \hat \beta_j G_{ij}$$
+\item But, there are many (answered and open) complex (methodological and practical) questions.
+\vspace{6pt}
+
+\item Provide a topic-stratified reference list for self-study.
+\end{itemize}
+\vspace{1cm}
+
+
+
+## \small If interested: [PRS](https://www.genome.gov/Health/Genomics-and-Medicine/Polygenic-risk-scores) by NIH-National Human Genome Research Institute  
+
+\it A "polygenic risk score" is one way by which people can learn about their risk of developing a disease, based on \\
+{\bf the total number of changes} related to the disease. 
+\vspace{6pt}  
+
+\bf (environmental factors, populations)  
+
+
+## \small If interested: [PRS](https://en.wikipedia.org/wiki/Polygenic_score) by Wiki (March 17, 2021)  
+\small
+\it In genetics, a polygenic score, also called a polygenic risk score (PRS), genetic risk score, or genome-wide score, is a number that summarises the estimated effect of many genetic variants on an individual's phenotype, typically calculated as {\bf \large a weighted sum of trait-associated alleles}.$^{[1][2][3]}$  
+\vspace{6pt}  
+
+\it It reflects an individuals estimated genetic predisposition for a given trait and can be used as a predictor for that trait.$^{[4][5][6][7][8]}$   
+\vspace{6pt}  
+
+\it Polygenic scores are widely used in animal breeding and plant breeding (usually termed genomic prediction or genomic selection) due to their efficacy in improving livestock breeding and crops.$^{[9]}$  
+\vspace{6pt}  
+
+\it They are also increasingly being used for {\bf \large risk prediction} in humans for {\bf \large complex diseases} [10] which are typically affected by many genetic variants that each confer a small effect on overall risk.$^{[11][12]}$  
+
+##  
+\scriptsize
+[1] Dudbridge (2013). *PLOS Genetics*. [Power and predictive accuracy of polygenic risk scores](https://pubmed.ncbi.nlm.nih.gov/23555274/).    
+[2] Torkamani et al. (2018). *Nature Reviews Genetics*. [The personal and clinical utility of polygenic risk scores](https://pubmed.ncbi.nlm.nih.gov/29789686/).     
+[3] Lambert et al. (2019). *Human Molecular Genetics*. [Towards clinical utility of polygenic risk scores](https://pubmed.ncbi.nlm.nih.gov/31363735/).  
+[4] de Vlaming and Groenen (2015). *BioMed Research International*. [The Current and Future Use of Ridge Regression for Prediction in Quantitative Genetics](https://pubmed.ncbi.nlm.nih.gov/26273586/).    
+[5] Lewis and Vassos E (2017). *Genome Medicine*. [Prospects for using risk scores in polygenic medicine](https://pubmed.ncbi.nlm.nih.gov/29132412/).  
+[6] Khera et al. (2018). *Nature Genetics*. [Genome-wide polygenic scores for common diseases identify individuals with risk equivalent to monogenic mutations](https://pubmed.ncbi.nlm.nih.gov/30104762/).  
+[7] Yanes et al. (2020). *Clinical Genetics*. [Uptake of polygenic risk information among women at increased risk of breast cancer](https://pubmed.ncbi.nlm.nih.gov/31833054/).  
+[8] Vilhjalmsson et al.(2015). *American Journal of Human Genetics*. [Modeling Linkage Disequilibrium Increases Accuracy of Polygenic Risk Scores](https://pubmed.ncbi.nlm.nih.gov/26430803/). (LDpred)  
+[9] Spindel and McCouch (2016). *The New Phytologist*. [When more is better: how data sharing would accelerate genomic selection of crop plants](https://pubmed.ncbi.nlm.nih.gov/27716975/). (Caution: more is only better if you know how to deal with potential heterogeneity.)  
+[10] Regalado (2019). *MIT Technology Review*. [23andMe thinks polygenic risk scores are ready for the masses, but experts aren't so sure](https://www.technologyreview.com/2019/03/08/136730/23andme-thinks-polygenic-risk-scores-are-ready-for-the-masses-but-experts-arent-so-sure/).  
+[11] Visscher et al. (2017) *American Journal of Human Genetics*. [10 Years of GWAS Discovery: Biology, Function, and Translation](https://pubmed.ncbi.nlm.nih.gov/28686856/). (*The Utility of GWAS-Derived Genetic Predictors*)  
+[12] Spiliopoulou et al. (2015). *Human Molecular Genetics*. [Genomic prediction of complex human traits: relatedness, trait architecture and predictive meta-models](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4476450/).     
+
+
+## PRS = a weighted sum of trait-associated alleles 
+\centerline {\bf a simple expression with {\color{red} many complex questions}}  
+
+\vspace{6pt}
+\centerline{$PRS_i=\sum_{j=1}^{J} \hat \beta_j G_{ij}$}
+
+\small
+\begin{itemize}
+\item {\color{red}{$PRS_i$}}: PRS for individual $i$  
+\item[] {\bf which population? environmental exposure?}
+\item {\color{red}{$J$}}: the total number of {\bf `relevant'} bi-allelic (common) SNPs   
+\item[] {\bf rare variants?} other types of genetic markers?  
+\item {\color{red}{$\hat \beta_j$}}: {\bf estimated effect size} of SNP $j$  
+\item[] {\bf portability: which population? phenotype/pleiotropy?} direction of effects?
+\item {\color{red}{$G_{ij}$}}: the number of copies of the risk allele
+\item[] {\bf counting $a$ or $A$?} the minor or major allele?
+\item {\color{red}{$\sum$}}: how to deal with {\bf dependency/linkage disequilibrium ({\color{red}{LD}})}?
+\end{itemize}
+
+## Other Complications/Considerations (= Opportunities)  
+
+Autosomes $\longrightarrow$ **the X-chromosome** (and Y-chromosome)  
+\footnotesize [Dr. Wei Deng, McMaster University](https://github.com/WeiAkaneDeng)
+
+\normalsize
+Main $\longrightarrow$  **Interaction effect**  
+
+Variance $\longrightarrow$  Covariance, **genetic overlap**
+
+Population $\longrightarrow$ **Family data**
+
+Cross-sectional $\longrightarrow$ **Longitudinal data**
+\footnotesize [Dr. Laurent Briollais, Luenfeld-Tanenbaum ](https://www.lunenfeld.ca/?page=briollais-laurent)  
+
+\normalsize
+Association and prediction $\longrightarrow$ **Causal inference**  
+\footnotesize [Prof. Linbo Wang, UofT Stat](https://sites.google.com/site/linbowangpku/home) 
+
+\normalsize
+(dry) lab-environment method development and evaluation $\longrightarrow$ **real-life implementation and clinical implication** 
+\footnotesize [Dr. Delnaz Roshandel, Sickkids](https://ca.linkedin.com/in/delnaz-roshandel-2ba50952), [Dr. Jennifer Brooks, UofT Epi](https://www.dlsph.utoronto.ca/faculty-profile/brooks-jennifer/) and 
+\footnotesize [Dr. Andrew Paterson, Sickkids](https://www.sickkids.ca/en/staff/p/andrew-paterson/)
+
+## PRS for risk prediction for complex diseases 
+![](https://utstat.toronto.edu/sun/art/fig-Wand-PRS_Illustration.png){width=70%,center}    
+\scriptsize
+Figure 1 of Wand et al. (2021). *Nature*. [Improving reporting standards for polygenic scores in risk prediction studies](https://pubmed.ncbi.nlm.nih.gov/33692554/).   
+  
+*An illustration of the distribution of a polygenic risk score in both cases (individuals with a disease/trait) and controls (those without) [left], and*   
+  
+*the predictive ability where individuals with a high polygenic risk score have an increased risk of disease/trait over time [right].*  
+
+## PRS for risk prediction, cont'd
+
+![](https://utstat.toronto.edu/sun/art/fig-Badre2021-fig3.png){width=90%} 
+
+\scriptsize
+Figure 3 of Badre et al. (2021). *Journal of Human Genetics*. [Deep neural network improves the estimation of polygenic risk scores for breast cancer.](https://www.nature.com/articles/s10038-020-00832-7)  
+\vspace{6pt}
+
+**N.B. The classical logistic regression is competitive!**
+
+## Reference -- PRS Paper `0'   
+-  Wray, Goddard, Visscher PM (2007).  *Genome Research*. [Prediction of individual genetic risk to disease from genome-wide association studies](https://pubmed.ncbi.nlm.nih.gov/17785532/).  (514 citation in PMC; March 17, 2021)  
+\vspace{12pt}  
+
+- International Schizophrenia Consortium; Purcell et al. (2009). *Nature*. [Common polygenic variation contributes to risk of schizophrenia and bipolar disorder](https://pubmed.ncbi.nlm.nih.gov/19571811/) (4123 citations in PMC; March 17, 2021)
+
+
+## \small If interested: Growth of PRS Research   
+![](https://utstat.toronto.edu/sun/art/fig-PubMed-PRS-search-03172021.png){width=70%,center}  
+
+## \small If interested: Not a Linear Growth!
+\tiny
+```{r, echo=TRUE,out.width = '70%',fig.align = "center"}
+# Search query: polygenic risk score;  
+# Search date: March 17, 2021
+year=c(2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020)
+count=c(35,38,43,60,57,75,108,139,186,206,270,399,474,679)
+plot(year,count,col="red",pch=16)
+lines(year,fitted(lm(count~year)),col='blue',lwd=3)
+lines(year,fitted(lm(count~poly(year,2))),col='black',lwd=3)
+lines(year,fitted(lm(count~poly(year,3))),col='red',lwd=3)
+```
+\scriptsize
+**N.B. prediction $\neq$ model fitting $\neq$ `best' fit**
+
+## \small If interested: Discussion, PRS research is data science = interdisciplinary/multidisciplinary research 
+\centering
+![](https://utstat.toronto.edu/sun/art/fig-data-science.png){width=60%}  
+
+## \small If interested: Discussion cont'd
+**Harvard Data Science Review** [(HDSR)](https://hdsr.mitpress.mit.edu/)  
+[Data Science Education](https://hdsr.mitpress.mit.edu/data-science-education)  
+[Reproducibility and Replicability](https://hdsr.mitpress.mit.edu/reproducabilityandreplicability)    
+[AI and Responsible Data Science](https://hdsr.mitpress.mit.edu/ai-and-responsible-data-science)  
+\vspace{12pt}  
+
+**Genetic Diversity and Ancestry**  
+Akinyemi Oni-Orisan, Yusuph Mavura, Yambazi Banda, Timothy A Thornton, Ronnie Sebro (2021). *New England Journal of Medicine*  
+[Embracing Genetic Diversity to Improve Black Health](https://pubmed.ncbi.nlm.nih.gov/33567186/)  
+
+## 
+\vspace{24pt}
+\centerline{\bf Topic-Stratified References}  
+\vspace{6pt}
+\centerline{\bf \color{red} Not an Exhaustive List}  
+
+## Reference -- PRS tutorial and `famous' software
+\footnotesize
+- Choi et al. (2019). *Nature Protocols*.  [Tutorial: a guide to performing polygenic risk score analyses](https://pubmed.ncbi.nlm.nih.gov/32709988/). 
+\vspace{12pt}
+- Purcell et al. (2007). *American Journal of Human Genetics*. [PLINK: a toolset for whole-genome association and population-based linkage analysis](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1950838/). (PLINK)
+- Vilhjalmsson et al.(2015). *American Journal of Human Genetics*. [Modeling Linkage Disequilibrium Increases Accuracy of Polygenic Risk Scores](https://pubmed.ncbi.nlm.nih.gov/26430803/). (LDpred)
+- Euesden et al. (2015). *Bioinformatics*. [PRSice: Polygenic Risk Score software](https://pubmed.ncbi.nlm.nih.gov/25550326/).  (PRSice)  
+- Mak et al. (2017). *Genetic Epidemiology*. [Polygenic scores via penalized regression on summary statistics](https://pubmed.ncbi.nlm.nih.gov/28480976/). (lassosum; R package).  
+
+## Reference -- PRS review and perspectives
+\footnotesize
+- Dudbridge (2013). *PLOS Genetics*. [Power and predictive accuracy of polygenic risk scores](https://pubmed.ncbi.nlm.nih.gov/23555274/).  
+\vspace{12pt}
+- Wray et al. (2014). *Journal of Child Psychology and Psychiatry*. [Research review: Polygenic methods and their application to psychiatric traits](https://pubmed.ncbi.nlm.nih.gov/25132410/).  
+- Chatterjee et al. (2016). *Nature Review Genetics*. [Developing and evaluating polygenic risk prediction models for stratified disease prevention](https://pubmed.ncbi.nlm.nih.gov/27140283/).    
+- Visscher et al. (2017).  *American Journal of Human Genetics*. [10 Years of GWAS Discovery: Biology, Function, and Translation](https://pubmed.ncbi.nlm.nih.gov/28686856/). (*The Utility of GWAS-Derived Genetic Predictors*)  
+- Dudbridge et al. (2018) *Genetic Epidemiology*. [Predictive accuracy of combined genetic and environmental risk scores](https://pubmed.ncbi.nlm.nih.gov/29178508/).  
+\vspace{12pt}
+- See a full [video](https://www.youtube.com/watch?v=DpR-T7JdCpQ) of "Panel Discussion: The Personal and Clinical Utility of Genetic Risk Scores: Are they ready for PRIME TIME?" from the [CANSSI-Ontario](https://canssiontario.utoronto.ca) Research Day on [March 5, 2020](https://canssiontario.utoronto.ca/event/research_day/).   
+
+## Reference -- PRS utility and clinical implication
+\footnotesize
+- Lewis and Vassos (2017). *Genome Medicine*. [Prospects for using risk scores in polygenic medicine](https://pubmed.ncbi.nlm.nih.gov/29132412/).  
+- Hasin et al. (2017). *Genome Biology*. [Multi-omics approaches to disease](https://pubmed.ncbi.nlm.nih.gov/28476144/).  
+- Torkamani et al. (2018). *Nature Reviews Genetics*. [The personal and clinical utility of polygenic risk scores](https://pubmed.ncbi.nlm.nih.gov/29789686/).   
+- Lambert et al. (2019). *Human Molecular Genetics*. [Towards clinical utility of polygenic risk scores](https://pubmed.ncbi.nlm.nih.gov/31363735/).  
+- Janssens (2019). *Human Molecular Genetics*. [Validity of polygenic risk scores: are we measuring what we think we are?](https://pubmed.ncbi.nlm.nih.gov/31504522/).
+- Lewis and Vassos (2020). *Genome Medicine*. [Polygenic risk scores: from research tools to clinical instruments](https://pubmed.ncbi.nlm.nih.gov/32423490/).  
+- Li et al. (2020). *Nature Review Genetics*. [Electronic health records and polygenic risk scores for predicting disease risk](https://pubmed.ncbi.nlm.nih.gov/32235907/).
+
+## References - PRS in action
+\footnotesize
+- Khera et al. (2018). *Nature Genetics*. [Genome-wide polygenic scores for common diseases identify individuals with risk equivalent to monogenic mutations](https://pubmed.ncbi.nlm.nih.gov/30104762/).
+- Mavaddat et al. (2019). *American Journal of Human Genetics*. [Polygenic Risk Scores for Prediction of Breast Cancer and Breast Cancer Subtypes](https://pubmed.ncbi.nlm.nih.gov/30554720/).
+- Lee et al. (2019). *Genetics in Medicine* [BOADICEA: A comprehensive breast cancer risk prediction model incorporating genetic and nongenetic risk factors](https://pubmed.ncbi.nlm.nih.gov/30643217/).  
+- Fritsche et al. (2020). *The American Journal of Human Genetics*. [Cancer PRSweb: An Online Repository with Polygenic Risk Scores for Major Cancer Traits and Their Evaluation in Two Independent Biobanks](https://pubmed.ncbi.nlm.nih.gov/32991828/).  
+- Mars et al. (2020). *Nature Medicine*. [Polygenic and clinical risk scores and their impact on age at onset and prediction of cardiometabolic diseases and common cancers](https://pubmed.ncbi.nlm.nih.gov/32273609/).  
+- Richardson et al. (2020). *Elife*. [An atlas of polygenic risk score associations to highlight putative causal relationships across the human phenome](https://pubmed.ncbi.nlm.nih.gov/30835202/).  
+- Yanes et al. (2020). *Clinical Genetics*. [Uptake of polygenic risk information among women at increased risk of breast cancer](https://pubmed.ncbi.nlm.nih.gov/31833054/).  
+- Meyers et al. (2021). *Translational Psychiatry*. [The association of polygenic risk for schizophrenia, bipolar disorder, and depression with neural connectivity in adolescents and young adults: examining developmental and sex differences](https://pubmed.ncbi.nlm.nih.gov/33446638/).  
+
+## Reference -- PRS methods with `famous' acronyms  
+\footnotesize
+- Vilhjalmsson et al.(2015). *American Journal of Human Genetics* [Modeling Linkage Disequilibrium Increases Accuracy of Polygenic Risk Scores](https://pubmed.ncbi.nlm.nih.gov/26430803/). (LDpred) 
+- Prive et al.(2020). *Bioinformatics*. [LDpred2: better, faster, stronger](https://pubmed.ncbi.nlm.nih.gov/33326037/). (LDpred2)
+\vspace{8pt}
+- Euesden et al. (2015). *Bioinformatics* [PRSice: Polygenic Risk Score software](https://pubmed.ncbi.nlm.nih.gov/25550326/).  (PRSice)
+- Choi and O'Reilly (2019). *Giga Science*. [PRSice-2: Polygenic Risk Score software for biobank-scale data](https://pubmed.ncbi.nlm.nih.gov/31307061/). (PRScie-2)  
+\vspace{8pt}
+- Mak et al. (2017). *Genetic Epidemiology*. [Polygenic scores via penalized regression on summary statistics](https://pubmed.ncbi.nlm.nih.gov/28480976/). (lassosum).
+\vspace{8pt}
+- Turley et al. (2018). *Nature Genetics*. [Multi-trait analysis of genome-wide association summary statistics using MTAG](https://pubmed.ncbi.nlm.nih.gov/29292387/). (MTAG)  
+
+
+## Reference -- PRS methods on \color{red}$J$ and $\sum$ (LD)
+\footnotesize
+- International Schizophrenia Consortium; Purcell et al. (2009). *Nature*. [Common polygenic variation contributes to risk of schizophrenia and bipolar disorder](https://pubmed.ncbi.nlm.nih.gov/19571811/). (Pruning and Thresholding; P+T)
+- Goldstein et al. (2015). *Genetic Epidemiology*. [Contemporary Considerations for Constructing a Genetic Risk Score: An Empirical Approach](https://pubmed.ncbi.nlm.nih.gov/26198599/).
+- Prive (2019). *American Journal of Human Genetics*. [Making the Most of Clumping and Thresholding for Polygenic Scores](https://pubmed.ncbi.nlm.nih.gov/31761295/). (Stacked Clumping + Thresholding)  
+
+## Reference -- PRS methods on \color{red}$J$ and $\sum$ (LD) and $\hat \beta_j$ 
+\footnotesize
+- de Vlaming and Groenen (2015). *BioMed Research International*. [The Current and Future Use of Ridge Regression for Prediction in Quantitative Genetics](https://pubmed.ncbi.nlm.nih.gov/26273586/).  
+- Shi et al. (2016). *PLoS Genetics*. [Winner's Curse Correction and Variable Thresholding Improve Performance of Polygenic Risk Modeling Based on Genome-Wide Association Study Summary-Level Data](https://pubmed.ncbi.nlm.nih.gov/28036406/).
+- Mak et al. (2016). *Behavior Genetics*. [Local True Discovery Rate Weighted Polygenic Scores Using GWAS Summary Data](https://pubmed.ncbi.nlm.nih.gov/26747043/). 
+- Mak et al. (2017). *Genetic Epidemiology*. [Polygenic scores via penalized regression on summary statistics](https://pubmed.ncbi.nlm.nih.gov/28480976/). (lassosum).
+- Zhang et al. (2018). *Nature Genetics*. [Estimation of complex effect-size distributions using summary-level statistics from genome-wide association studies across 32 complex traits](https://pubmed.ncbi.nlm.nih.gov/30104760/).  
+
+## Reference -- PRS Bayesian methods
+\footnotesize
+- Vilhjalmsson et al.(2015). *American Journal of Human Genetics*. [Modeling Linkage Disequilibrium Increases Accuracy of Polygenic Risk Scores](https://pubmed.ncbi.nlm.nih.gov/26430803/). (LDpred)
+- So and Sham (2017). *Scientific Reports*. [Improving polygenic risk prediction from summary statistics by an empirical Bayes approach](https://pubmed.ncbi.nlm.nih.gov/28145530/).  
+- Zeng and Zhou (2017). *Nature Communications*. [Non-parametric genetic prediction of complex traits with latent Dirichlet process regression models](https://pubmed.ncbi.nlm.nih.gov/28878256/).   
+- Zhu and Stephens (2017). *Annals of Applied Statistics*. [Bayesian large-scale multiple regression with summary statistics from genome-wide association studies](https://pubmed.ncbi.nlm.nih.gov/29399241/). (RSS)  
+- Ge et al. (2019). *Nature Communications*. [Polygenic prediction via Bayesian regression and continuous shrinkage priors](https://pubmed.ncbi.nlm.nih.gov/30992449/). (PRS-CS)   
+
+## Reference -- PRS Bayesian methods, cont'd
+\footnotesize
+- Lloyd-Jones et al. (2019). *Nature Communications*. [Improved polygenic prediction by Bayesian multiple regression on summary statistics](https://pubmed.ncbi.nlm.nih.gov/31704910/). (SBayesR)
+- Newcombe (2019). *Genetic Epidemiology*. [A flexible and parallelizable approach to genome‐wide polygenic risk scores](https://pubmed.ncbi.nlm.nih.gov/31328830/). (JAMPred).  
+- Song et al. (2020). *PLoS Computational Biology*.  [Leveraging effect size distributions to improve polygenic risk scores derived from summary statistics of genome-wide association studies](https://pubmed.ncbi.nlm.nih.gov/32045423/). (EB-PRS;Empirical Bayes)  
+- Yang et al. (2020). *The American Journal of Human Genetics*. [Accurate and Scalable Construction of Polygenic Scores in Large Biobank Data Sets](https://pubmed.ncbi.nlm.nih.gov/32330416/). (DBSLMM)  
+
+## Reference -- PRS methods on data integration -- diverse populations 
+\footnotesize
+- Marquez-Luna et al. (2017) *Genetic Epidemiology*. [Multiethnic polygenic risk scores improve risk prediction in diverse populations](https://pubmed.ncbi.nlm.nih.gov/29110330/).  
+- Duncan et al. (2019). *Nature Communications*. [Analysis of polygenic risk score usage and performance in diverse human populations](https://pubmed.ncbi.nlm.nih.gov/31346163/).  
+- Grinde et al. (2019). *Genetic Epidemiology*. [Generalizing polygenic risk scores from Europeans to Hispanics/Latinos](https://pubmed.ncbi.nlm.nih.gov/30368908/).  
+- Gola et al. (2020). *Circulation: Genomic and Precision Medicine*. [Population Bias in Polygenic Risk Prediction Models for Coronary Artery Disease](https://pubmed.ncbi.nlm.nih.gov/33170024/).    
+- Cavazos and Witte (2021). *Human Genetics and Genomics Advances*. [Inclusion of variants discovered from diverse populations improves polygenic risk score transferability](https://pubmed.ncbi.nlm.nih.gov/33564748/).  
+\vspace{6pt}
+- Atkinson et la. (2021). *Nature Genetics.* [Tractor uses local ancestry to enable the inclusion of admixed individuals in GWAS and to boost power](https://pubmed.ncbi.nlm.nih.gov/33462486/) (from global to local ancestry and admixture.)
+
+## Reference -- PRS methods on data integration -- pleiotropy   
+\footnotesize
+- Hu et al. (2017). *PLoS Genetics*. [Joint modeling of genetically correlated diseases and functional annotations increases accuracy of polygenic risk prediction](https://pubmed.ncbi.nlm.nih.gov/28594818/). (PleioPred)   
+- Fritsche et al.(2018). *The American Journal of Human Genetics*. [Association of Polygenic Risk Scores for Multiple Cancers in a Phenome-wide Study: Results from The Michigan Genomics Initiative](https://pubmed.ncbi.nlm.nih.gov/29779563/).  
+- Krapohl (2018). *Molecular Psychiatry*. [Multi-polygenic score approach to trait prediction](https://pubmed.ncbi.nlm.nih.gov/28785111/). (MPS)   
+- Maier (2018). *Nature Communications*. [Improving genetic prediction by leveraging genetic correlations among human diseases and traits](https://pubmed.ncbi.nlm.nih.gov/29515099/). (SMTpred)  
+- Turley et al. (2018). *Nature Genetics*. [Multi-trait analysis of genome-wide association summary statistics using MTAG](https://pubmed.ncbi.nlm.nih.gov/29292387/). (MTAG)  
+- Chung et al. (2019). *Nature Communications*. [Efficient cross-trait penalized regression increases prediction accuracy in large cohorts using secondary phenotypes](https://pubmed.ncbi.nlm.nih.gov/30718517/). (CTPR)   
+
+- Chen et al.  (2021). *Journal of the American Statistical Association*. [A Penalized Regression Framework for Building Polygenic Risk Models Based on Summary Statistics From Genome-Wide Association Studies and Incorporating External Information](https://www.tandfonline.com/doi/abs/10.1080/01621459.2020.1764849). (PANPRS; also annotation)
+
+## Reference -- PRS methods on data integration -- others (e.g. gene-expression, functional annotation)  
+\footnotesize
+- Hasin et al. (2017). *Genome Biology*. [Multi-omics approaches to disease](https://pubmed.ncbi.nlm.nih.gov/28476144/).  
+- Hu et al. (2017). *PLoS Computational Biology*.  [Leveraging functional annotations in genetic risk prediction for human complex diseases](https://pubmed.ncbi.nlm.nih.gov/28594818/). (AnnoPred)   
+- Marigorta et al. (2017). *Nature Genetics*. [Transcriptional risk scores link GWAS to eQTLs and predict complications in Crohn’s disease](https://pubmed.ncbi.nlm.nih.gov/28805827/).    
+- Pare et al. (2017) *Scientific Reports*. [A machine-learning heuristic to improve gene score prediction of polygenic traits](https://www.nature.com/articles/s41598-017-13056-1). (GraBLD)
+- Wu and Pan. (2018). *Genetic Epidemiology*. [Integrating eQTL data with GWAS summary statistics in pathway-based analysis with application to schizophrenia](https://pubmed.ncbi.nlm.nih.gov/29411426/).  
+- Gusev et al. (2019). *Nature Genetics*. [Transcriptome-wide association study of schizophrenia and chromatin activity yields mechanistic disease insights](https://pubmed.ncbi.nlm.nih.gov/29632383/).  
+
+
+## Reference -- PRS Other Topics
+\footnotesize
+- Weiner et al. (2017). *Nature Genetics*. [Polygenic transmission disequilibrium confirms that common and rare variation act additively to create risk for autism spectrum disorders](https://pubmed.ncbi.nlm.nih.gov/28504703/). (pTDT)  
+\vspace{6pt}
+- Meisner et al. (2019) *American Journal of Epidemiology*. [Case-Only Analysis of Gene-Environment Interactions Using Polygenic Risk Scores](https://academic.oup.com/aje/article-abstract/188/11/2013/5552087).  (Interaction)  
+\vspace{6pt}
+
+- Deng et al. (2019). *Genetic Epidemiology*. [Analytical strategies to include the X-chromosome in variance heterogeneity analyses: Evidence for trait-specific polygenic variance structure](https://pubmed.ncbi.nlm.nih.gov/31332826/). (Xchr \& Interaction)  
+\vspace{6pt}
+- Yonova-Doing et al. (2021). *Nature Genetics.* [An atlas of mitochondrial DNA genotype– phenotype associations in the UK Biobank](https://pubmed.ncbi.nlm.nih.gov/34002094/) (mitochondrial DNA)
+- Andrews et al. (2020). *Neurobiology Aging.* [Mitonuclear interactions influence Alzheimer’s disease risk](https://pubmed.ncbi.nlm.nih.gov/31784277/) (mito-nuclear Interaction)
+
+## A recent method comparison study **in the context of psychiatric disorders**  
+\footnotesize
+  
+Ni et al. (2021). *Biological Psychiatry*. [A Comparison of Ten Polygenic Score Methods for Psychiatric Disorders Applied Across Multiple Cohorts](https://pubmed.ncbi.nlm.nih.gov/34304866/).
+
+*Methods: The Psychiatric Genomics Consortium Working Groups for schizophrenia and major depressive disorder bring together many independently collected case-control cohorts. We used these resources (31,328 schizophrenia cases, 41,191 controls; 248,750 major depressive disorder cases, 563,184 controls) in repeated application of leave-one-cohort-out meta-analyses, each used to calculate and evaluate PGS in the left-out (target) cohort.*  
+
+*Ten PGS methods (the baseline PC+T method and 9 methods that model genetic architecture more formally: SBLUP, LDpred2-Inf, LDpred-funct, LDpred2, Lassosum, PRS-CS, PRS-CS-auto, SBayesR, MegaPRS) were compared.*
+
+*Conclusions: Although **the methods that more formally model genetic architecture have similar performance**, ...* 
+\vspace{12pt}
+
+Personal opinion: no [UMP](https://en.wikipedia.org/wiki/Uniformly_most_powerful_test) tests/methods for complex problems.
+
+## Refernece -- PRS `bad news' (= more opportunities)
+\footnotesize
+- Martin et al. (2019). *Nature Genetics*. [Clinical use of current polygenic risk scores may exacerbate health disparities](https://www.nature.com/articles/s41588-019-0379-x)
+- Mostafavi (2020). *eLIFE*. [Variable prediction accuracy of polygenic scores within an ancestry group](https://pubmed.ncbi.nlm.nih.gov/31999256/)
+- Gola et al. (2020). *Circulation: Genomic and Precision Medicine*. [Population Bias in Polygenic Risk Prediction Models for Coronary Artery Disease](https://www.ahajournals.org/doi/10.1161/CIRCGEN.120.002932).  
+- Wang et al. (2020). *Nature Communication*. [Theoretical and empirical quantification of the accuracy of polygenic scores in ancestry divergent populations.](https://www.nature.com/articles/s41467-020-17719-y)
+- Wand et al. (2021). *Nature*. [Improving reporting standards for polygenic scores in risk prediction studies](https://www.nature.com/articles/s41586-021-03243-6)
+
+## Recap the goal of this lecture
+
+\begin{itemize}
+\item PRS is intuitive with a simple expression:
+$$PRS_i=\sum_{j=1}^{J} \hat \beta_j G_{ij}$$
+\item But, there are many (answered or open) complex (methodological and practical) questions.
+\item Provide a topic-stratified reference list for self-study.
+\end{itemize}
+\vspace{1cm}
+
+\centerline{What's next?}
+
+## Overview of the topics to be covered and learning goal:  a **deeper** understanding of  
+\footnotesize
+  
+**1.	PRS foundation: GWAS, h2 and prediction**   
+\vspace{-3pt}  
+  
+- the multiple hypothesis testing issue inherent in GWAS  
+- the (high) variability inherent in the h2 estimates  
+- h2 as a function of both genetic effect beta and MAF  
+- the ‘genetic effect size’ of a SNP as a function of beta and MAF   
+- a conceptual PRS construction based on the ground truth, PRS.oracle  
+- DIY ROC plotting and AUC calculation for a PRS-based prediction
+
+**2.	PRS basic: PRS calculation and performance evaluation**  
+\vspace{-3pt}  
+
+- the complexity of constructing a good PRS even under the simplest setting without LD or any heterogeneities; 10 out 5000 independent SNPs are truly associated with the same effect size of 0.3 but varying MAFs.  
+- the trouble introduced by false positives, due to multiple hypothesis testing and low power.  
+-	'the more is not always better' statement: PRS based on 6 `genome-wide’ significant SNPs vs. 66 SNPs significant at 0.01.  
+- the various over-fitting or selection biases, and winner’s curse in beta estimates for both false positives and true positives.  
+
+
+## Learning goal cont'd, a **deeper** understanding of  
+\footnotesize
+  
+**3.	PRS basic-plus: some obvious or not so obvious follow-up Qs**  
+\vspace{-3pt}  
+
+- effects of sample size n and genetic effect beta on AUC: easy to answer.  
+- answers to these Qs are less obvious. If we decrease beta from 0.3 to 0.1 but increase the number of truly associated SNPs from 10 to 90:   
+h2 and SNP h2? AUC in general? AUC between PRS.gw and PRS.01?  
+
+**4.	PRS heterogeneity and transportability**  
+\vspace{-3pt}  
+
+- first, why reference allele (genome build) matching is so consequential  
+- population heterogeneity  
+- locus heterogeneity  
+
+**5. PRS LD consideration (TBA)**
+\vspace{2cm}
+
+\centerline{Ready for the ride? (Hopefully a fun one!)}
+
