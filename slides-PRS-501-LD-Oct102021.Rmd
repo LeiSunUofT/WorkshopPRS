@@ -1,0 +1,868 @@
+---
+title: Polygenic Risk Score (PRS) Introduction 501 
+subtitle: LD and Concluding Remarks
+author: Drs. Lei Sun, Wei Deng, Yanyan Zhao
+institute:
+  - Department of Statistical Sciences, FAS  
+  - Division of Biostatistics, DLSPH  
+  - University of Toronto    
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+
+output: 
+  beamer_presentation: 
+    pandoc_args: ["--extract-media", "./extracted-image"]
+# output: word_document
+# output: html_document
+# output: pdf_document
+
+header-includes:
+ - \usepackage{fancyhdr}
+ - \usepackage{amsmath,latexsym}
+ - \hypersetup{colorlinks=true, linkcolor=blue}
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(echo = TRUE)
+# knitr::opts_chunk$set(out.width = '70%') 
+set.seed(1234) 
+library(knitr)
+library(kableExtra)
+library(plotly)
+library(fields) 
+```
+
+## At the end of this lecture, some basic understanding of our **limited understanding of LD**
+
+- No heterogeneity between ex.data and my.data.  
+  
+- Only SNPs in perfect LD, $r^2=1$, and   
+  
+- But vary the number tagging SNPs  
+  
+- No allelic heterogeneity, and  
+  
+- No multiple causual SNPs within a locus. 
+
+## First  
+
+\color{red} Live Final Quiz 8 
+
+Adding two perfectly tagging SNPs to each of the 10 causal SNP, the AUC of PRS.gw will  
+
+A: decrease  
+B: increase  
+C: ~same  
+D: identical  
+  
+
+```{r,echo=FALSE,out.width = '50%',fig.align = "center"}
+generate.ex.sumstat=function(ex.seed,ex.nsample,ex.nsnp,ex.nsnp.true,ex.beta.true,ex.sigma) #the function assumes first ex.nsnp.true are causal and effect size all equal to ex.beta.true
+{
+  set.seed(ex.seed) 
+  ex.G=matrix(-9,nrow = ex.nsample,ncol = ex.nsnp)
+  ex.maf=runif(ex.nsnp,min=0.05,max=0.5)
+  ex.maf.hat=rep(-9,ex.nsnp)
+  ex.beta=c(rep(ex.beta.true,ex.nsnp.true),rep(0,(ex.nsnp-ex.nsnp.true)))
+  ex.betaG=rep(0,ex.nsample)
+  for(j in 1:ex.nsnp){
+    ex.nG=rmultinom(1,size=ex.nsample,prob=c((1-ex.maf[j])^2,2*ex.maf[j]*(1-ex.maf[j]), ex.maf[j]^2))
+    ex.maf.hat[j]=(2*ex.nG[3]+ex.nG[2])/(2*ex.nsample)
+    ex.G[,j]=sample(c(rep(0,ex.nG[1]),rep(1,ex.nG[2]),rep(2,ex.nG[3]))) # shuffle the G; no LD
+    ex.betaG=ex.betaG+ex.beta[j]*ex.G[,j]
+    }
+  ex.beta.0=0;ex.e=rnorm(ex.nsample,mean=0,sd=ex.sigma) 
+  ex.Y=ex.beta.0+ex.betaG+ex.e
+  
+  ex.sumstat=matrix(-9,nrow=ex.nsnp,ncol=7)
+  colnames(ex.sumstat)=c("MAF", "MAF.hat", "beta", "beta.hat", "se", "Z.value", "p.value")
+  for(j in 1:ex.nsnp){
+    ex.fit=lm(ex.Y~ex.G[,j])
+    ex.sumstat[j,]=c(ex.maf[j],ex.maf.hat[j],ex.beta[j],summary(ex.fit)$coefficients[2,])
+  }
+  
+  return(ex.sumstat)
+}
+```
+
+\tiny
+```{r,echo=FALSE,out.width = '70%',fig.align = "center"}
+generate.my.data=function(my.seed,my.nsample,my.nsnp,my.nsnp.true,my.beta.true,my.sigma,my.maf) # the function assumes my.nsnp=ex.nsp & the first my.nsnp.true are causal and with the same effect size of my.beta.true
+{
+  set.seed(my.seed) 
+  my.data=list()
+  
+  my.beta=c(rep(my.beta.true,my.nsnp.true),rep(0,(my.nsnp-my.nsnp.true))) 
+  my.maf.hat=rep(-9,my.nsnp) 
+  my.G=matrix(-9,nrow = my.nsample,ncol = my.nsnp)
+  my.betaG=rep(0,my.nsample)
+  
+  for(j in 1:my.nsnp){
+    my.nG=rmultinom(1,size=my.nsample,prob=c((1-my.maf[j])^2,2*my.maf[j]*(1-my.maf[j]), my.maf[j]^2))
+    my.maf.hat[j]=(2*my.nG[3]+my.nG[2])/(2*my.nsample) 
+    my.G[,j]=sample(c(rep(0,my.nG[1]),rep(1,my.nG[2]),rep(2,my.nG[3]))) 
+    my.betaG=my.betaG+my.beta[j]*my.G[,j]
+    }
+  my.beta.0=0;my.e=rnorm(my.nsample,mean=0,sd=my.sigma)
+  my.Y=my.beta.0+my.betaG+my.e # the phenotype vector
+
+  my.sumstat=matrix(-9,nrow=my.nsnp,ncol=7)
+  colnames(my.sumstat)=c("MAF", "MAF.hat", "beta", "beta.hat", "se", "Z.value", "p.value")
+  for(j in 1:my.nsnp){
+    my.fit=lm(my.Y~my.G[,j])
+    my.sumstat[j,]=c(my.maf[j],my.maf.hat[j],my.beta[j],summary(my.fit)$coefficients[2,])
+  }
+  
+  my.data$my.G=my.G
+  my.data$my.Y=my.Y
+  my.data$my.Y.STD=(my.Y-mean(my.Y))/sqrt(var(my.Y))
+  my.data$my.sumstat=my.sumstat
+  return(my.data)
+}
+```
+
+\tiny
+```{r,echo=FALSE,out.width = '50%',fig.align = "center"}
+generate.my.PRS.output=function(ex.sumstat,my.data,alpha.level,l.threshold)
+{
+  my.PRS.output=list()
+  
+  my.G=my.data$my.G
+  my.Y.STD=my.data$my.Y.STD
+  my.sumstat=my.data$my.sumstat
+
+  # add  the oracle one as well
+  my.PRS.oracle=rep(0,my.nsample)
+  my.PRS.oracle.STD=rep(0,my.nsample)
+  if(my.nsnp.true>0) { # in case no true causal SNPs
+    for (i in 1:my.nsample) 
+      for (j in 1:my.nsnp.true) # using all the causal SNPs and using the true effect size from my data
+        my.PRS.oracle[i]=my.PRS.oracle[i]+my.sumstat[j,"beta"]*my.G[i,j]
+    my.PRS.oracle.STD=(my.PRS.oracle-mean(my.PRS.oracle))/sqrt(var(my.PRS.oracle))
+  }
+  
+  # PRS for the different alpha levels
+  my.PRS.alpha=matrix(0,nrow=my.nsample,ncol=length(alpha.level))
+  my.PRS.alpha.STD=matrix(0,nrow=my.nsample,ncol=length(alpha.level))
+  my.PRS.J.info=matrix(0,nrow=length(alpha.level),ncol=4) 
+  colnames(my.PRS.J.info)=c("alpha","J","TP","FP")
+  my.PRS.J.info[,1]=alpha.level
+  
+  for(k in 1:length(alpha.level)) {
+    # J index & beta.hat from the external data
+    ex.J.index=which(ex.sumstat[,"p.value"]<=alpha.level[k])
+    # in case there are no significant SNPs in the external data
+    if (length(ex.J.index)>1) {
+      my.PRS.J.info[k,2]=length(ex.J.index) 
+      my.PRS.J.info[k,3]=length(which(ex.J.index<=my.nsnp.true)) # codes not adaptive as it assumes that ex and my SNPs are matched and the first my.nsnp.true SNPs are the true SNPs
+      my.PRS.J.info[k,4]=length(which(ex.J.index>my.nsnp.true))
+      
+      for (i in 1:my.nsample) 
+        for (j in 1:length(ex.J.index)) 
+          my.PRS.alpha[i,k]=my.PRS.alpha[i,k]+ex.sumstat[ex.J.index[j],"beta.hat"]*my.G[i,ex.J.index[j]]  # pay attention to the use of ex. and my.
+
+      my.PRS.alpha.STD[,k]=(my.PRS.alpha[,k]-mean(my.PRS.alpha[,k]))/sqrt(var(my.PRS.alpha[,k]))
+    }
+  }
+
+  # the liability threshold applied to the standardized my.Y
+  my.case.index=which(my.Y.STD>l.threshold)
+  my.control.index=which(my.Y.STD<=l.threshold)
+  my.color.index=rep("black",my.nsample); my.color.index[my.case.index]="red"
+  # for ROC and AUC later
+  my.Y.cc=rep("0-Control",my.nsample); my.Y.cc[my.case.index]="1-Case"
+  my.ncase=sum(my.Y.cc=="1-Case") # total number of cases
+  my.ncontrol=sum(my.Y.cc=="0-Control") # total number of controls
+
+  my.PRS.output$my.PRS.oracle=my.PRS.oracle
+  my.PRS.output$my.PRS.oracle.STD=my.PRS.oracle.STD
+  my.PRS.output$my.PRS.alpha=my.PRS.alpha
+  my.PRS.output$my.PRS.alpha.STD=my.PRS.alpha.STD
+  my.PRS.output$my.PRS.J.info=my.PRS.J.info
+  
+  my.PRS.output$my.Y.cc=my.Y.cc 
+  my.PRS.output$my.ncase=my.ncase
+  my.PRS.output$my.ncontrol=my.ncontrol
+  my.PRS.output$my.color.index=my.color.index
+  my.PRS.output$my.case.index=my.case.index
+  
+  return(my.PRS.output)
+}
+```
+
+\tiny
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+generate.ss.ROC.AUC=function(my.PRS.output,PRS.STD.input) {
+
+  ss.ROC.AUC=list()
+  
+  my.Y.cc=my.PRS.output$my.Y.cc
+  my.ncase=my.PRS.output$my.ncase
+  my.ncontrol=my.PRS.output$my.ncontrol
+  
+  PRS=PRS.STD.input
+  
+  a=seq(4,-2.5,by=-0.5) # the range for calling Positives 
+  P=rep(-9,length(a));TP=rep(-9,length(a));FP=rep(-9,length(a))
+  sensitivity=rep(-9,length(a)); specificity.1=rep(-9,length(a))
+
+  for (k in 1:length(a)) {
+    PRS.threshold=a[k]
+    P[k]=sum(PRS>PRS.threshold)
+    TP[k]=sum(my.Y.cc[PRS>PRS.threshold]=="1-Case")
+    FP[k]=sum(my.Y.cc[PRS>PRS.threshold]=="0-Control")
+    sensitivity[k]=TP[k]/my.ncase
+    specificity.1[k]=FP[k]/my.ncontrol
+  }
+
+  auc=0
+  for (k in 2:length(a)) # Trapezoid's method height*(base1+base2)/2
+    auc = auc + (specificity.1[k]-specificity.1[k-1])*(sensitivity[k]+sensitivity[k-1])/2
+
+  ss.ROC.AUC$sensitivity=sensitivity
+  ss.ROC.AUC$specificity.1=specificity.1
+  ss.ROC.AUC$auc=auc
+
+  return(ss.ROC.AUC)
+}
+```
+
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+generate.ROC.plot=function(my.PRS.output) {
+
+  my.PRS.output=my.PRS.output
+  
+  my.PRS.oracle.STD=my.PRS.output$my.PRS.oracle.STD
+  my.PRS.alpha.STD=my.PRS.output$my.PRS.alpha.STD
+  my.PRS.J.info=my.PRS.output$my.PRS.J.info
+  
+  method=c("PRS.oracle (0.769)","PRS.gw (0.713)","PRS.01 (0.653)","PRS.1 (0.604)") # This is not adaptive
+  auc.method=rep(0,(length(alpha.level)+1)) # the first one is for oracle
+  
+  if(my.nsnp.true>0) {
+    ss.ROC.AUC=generate.ss.ROC.AUC(my.PRS.output,my.PRS.oracle.STD)
+    plot(ss.ROC.AUC$specificity.1,ss.ROC.AUC$sensitivity,type="b",pch=20,col="grey",xlab="1 - Specificity = False Positives/ncontrols",ylab="Sensitivity = True Positives/ncases")
+    abline(0,1)
+    auc.method[1]=ss.ROC.AUC$auc
+  } else {
+    plot(seq(0,1,0.1),seq(0,1,0.1),type="n",xlab="1 - Specificity = False Positives/ncontrols",ylab="Sensitivity = True Positives/ncases")   
+    abline(0,1,col="grey")
+    auc.method[1]=0.5
+  }
+  alpha.level.k=1
+  if (my.PRS.J.info[alpha.level.k,2]>0) {
+    ss.ROC.AUC=generate.ss.ROC.AUC(my.PRS.output,my.PRS.alpha.STD[,alpha.level.k])
+    lines(ss.ROC.AUC$specificity.1,ss.ROC.AUC$sensitivity,type="b",pch=20,col="red")
+    auc.method[alpha.level.k+1]=ss.ROC.AUC$auc
+  } else {
+    abline(0,1,col="red")
+    auc.method[alpha.level.k+1]=0.5
+  }
+
+  alpha.level.k=2
+  if (my.PRS.J.info[alpha.level.k,2]>0) {
+    ss.ROC.AUC=generate.ss.ROC.AUC(my.PRS.output,my.PRS.alpha.STD[,alpha.level.k])
+    lines(ss.ROC.AUC$specificity.1,ss.ROC.AUC$sensitivity,type="b",pch=20,col="blue")
+    auc.method[alpha.level.k+1]=ss.ROC.AUC$auc
+  } else {
+    abline(0,1,col="blue")
+    auc.method[alpha.level.k+1]=0.5
+  }
+
+  alpha.level.k=3
+  if (my.PRS.J.info[alpha.level.k,2]>0) {
+    ss.ROC.AUC=generate.ss.ROC.AUC(my.PRS.output,my.PRS.alpha.STD[,alpha.level.k])
+    lines(ss.ROC.AUC$specificity.1,ss.ROC.AUC$sensitivity,type="b",pch=20,col="green")
+    auc.method[alpha.level.k+1]=ss.ROC.AUC$auc
+  } else {
+    abline(0,1,col="green")
+    auc.method[alpha.level.k+1]=0.5
+  }
+
+  legend(0.6, 0.37, paste(round(auc.method,3),method), lty=1, lwd=2, col=c("grey","red","blue","green"),cex=1.3)
+
+  print(my.PRS.J.info)
+}
+```
+
+\tiny  
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+generate.association.plot=function(my.PRS.output){
+  
+  my.PRS.oracle.STD=my.PRS.output$my.PRS.oracle.STD
+  my.PRS.alpha.STD=my.PRS.output$my.PRS.alpha.STD
+  my.color.index=my.PRS.output$my.color.index
+  my.Y.STD=my.data$my.Y.STD
+  my.PRS.J.info=my.PRS.output$my.PRS.J.info
+  my.ncase=my.PRS.output$my.ncase
+  my.ncontrol=my.PRS.output$my.ncontrol
+  
+  par(mfrow=c(1,4))
+  temp=matrix(0, nrow=(length(alpha.level)+1),ncol=4)
+  
+  # the orcale one
+  if (my.nsnp.true>0) {
+    plot(my.PRS.oracle.STD,my.Y.STD,col=my.color.index,xlab="Oracle")
+    fit=lm(my.Y.STD~my.PRS.oracle.STD);abline(a=fit$coef[1],b=fit$coef[2],lty=2)
+    temp[1,]=summary(fit)$coefficients[2,]
+  } else {
+    plot(my.PRS.oracle.STD,my.Y.STD,col=my.color.index,xlab="Oracle")
+    temp[1,]=c(-9,-9,-9,-9)
+  }
+  
+  # the alpha ones
+  for(k in 1:length(alpha.level)){
+    if (my.PRS.J.info[k,2]>0) {
+      plot(my.PRS.alpha.STD[,k],my.Y.STD,col=my.color.index,xlab=paste("alpha=",alpha.level[k]))
+      fit=lm(my.Y.STD~my.PRS.alpha.STD[,k]);abline(a=fit$coef[1],b=fit$coef[2],lty=2)
+      temp[k+1,]=summary(fit)$coefficients[2,] # the first one for oracle
+    }
+    else {
+      plot(my.PRS.alpha.STD[,k],my.Y.STD,col=my.color.index,xlab=paste("alpha=",alpha.level[k]))
+      temp[k+1,]=c(-9,-9,-9,-9)
+    }
+  }
+
+  temp=rbind(c("slope.hat", round(temp[,1],3)), c("Z.value", round(temp[,3],3)), c("p.value", signif(temp[,4],digits=4)),c("n, case, control", (my.ncase+my.ncontrol), my.ncase, my.ncontrol, " "))
+  print(temp)
+}
+```
+
+\tiny
+```{r,echo=FALSE,out.width = '95%',fig.align = "center"}
+generate.sumstat.plot=function(sumstat,nsnp){
+  par(mfrow=c(2,2))
+  hist(sumstat[,"beta.hat"],freq=F)
+  curve(dnorm(x,mean=0, sd=(sqrt(var(sumstat[,"beta.hat"])))), add=T,lwd=2,col="blue")
+  hist(sumstat[,"Z.value"],freq=F)
+  curve(dnorm(x,mean=0, sd=1), add=T,lwd=2,col="blue")
+  hist(sumstat[,"p.value"],freq=F)
+  abline(h=1,col="blue")
+  plot(-log10((seq(1,nsnp,1)-0.5)/nsnp), -log10(sort(sumstat[,"p.value"])),ylab="-log(p-value) Obs", xlab="-log(p-value) Exp",main="QQ-plot of p-value")
+  abline(0,1,lwd=2,col="blue")
+}
+```
+  
+  
+## \footnotesize Recall the baseline model without any heterogeneity  
+
+\footnotesize
+10 out 5000 indep.\ SNPs with **varying `moderate-large' effects** are truly associated with $Y$ (**all $\beta=0.3$ but MAF vary**).  
+$$Y_i=\sum_{j=1}^{10} \beta_jG_{ij} + e, \text{ where } \beta_j=0.3$$   
+$$\text{ MAF} \sim \text{  Unif(0.05,0.5)}, \: e\sim N(0,1).$$    
+\vspace{24pt}
+  
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+# external data
+ex.nsnp.true=10; ex.beta.true=0.3
+ex.nsnp=5000; ex.nsample=1000; ex.sigma=1; ex.seed=101
+ex.sumstat=generate.ex.sumstat(ex.seed,ex.nsample,ex.nsnp,ex.nsnp.true,ex.beta.true,ex.sigma)
+
+# my data
+my.nsnp.true=10; my.beta.true=0.3; my.maf=ex.sumstat[,"MAF"] 
+my.nsnp=5000; my.nsample=1000; my.sigma=1; my.seed=102
+my.data=generate.my.data(my.seed,my.nsample,my.nsnp,my.nsnp.true,my.beta.true,my.sigma,my.maf)
+```
+
+##  
+\footnotesize
+**Total and SNP $h^2$ of the external model**
+```{r,echo=FALSE}
+V.G=sum(ex.sumstat[1:ex.nsnp.true,"beta"]^2*(2*ex.sumstat[1:ex.nsnp.true,"MAF"]*(1-ex.sumstat[1:ex.nsnp.true,"MAF"])))
+V.e=ex.sigma^2
+round(V.G/(V.G+V.e),3)
+V.G.loci=ex.sumstat[1:ex.nsnp.true,"beta"]^2*(2*ex.sumstat[1:ex.nsnp.true,"MAF"]*(1-ex.sumstat[1:ex.nsnp.true,"MAF"]))
+round(V.G.loci/(V.G+V.e),3)
+```
+\vspace{3pt}
+
+**The index of the six `genome-wide' significant ones**
+```{r,echo=FALSE}
+temp=which(ex.sumstat[,"p.value"]<=0.00001) #for 5000 SNPs
+print(temp)
+```
+\vspace{12pt}
+
+**Total and SNP $h^2$ of my model**
+```{r,echo=FALSE}
+my.sumstat=my.data$my.sumstat
+V.G=sum(my.sumstat[1:my.nsnp.true,"beta"]^2*(2*my.sumstat[1:my.nsnp.true,"MAF"]*(1-my.sumstat[1:my.nsnp.true,"MAF"])))
+V.e=my.sigma^2
+round(V.G/(V.G+V.e),3)
+V.G.loci=my.sumstat[1:my.nsnp.true,"beta"]^2*(2*my.sumstat[1:my.nsnp.true,"MAF"]*(1-my.sumstat[1:my.nsnp.true,"MAF"]))
+round(V.G.loci/(V.G+V.e),3)
+```
+  
+## \footnotesize Recall the different \color{red}$PRS_i=\sum_{j=1}^{J} \hat \beta_j G_{ij}$  
+\small
+**Using the GW threshold on the external data**  
+$$my.PRS_{GW}=\sum_{j=1}^{6} \hat \beta_j^{external}\times G_{ij}^{my.data}$$ 
+\vspace{6pt}
+
+**Using $\alpha=0.01$ (and also add $\alpha=0.1$) on the external data**  
+$$my.PRS_{.01} \text{ (or } my.PRS_{.1} \text{) }=\sum_{j=1}^{66 \text{ (or } 492 \text{) }} \hat \beta_j^{external}\times G_{ij}^{my.data}$$
+  
+\vspace{6pt}
+
+**The oracle one** (benchmarking the upper bound)
+$$my.PRS_{oracle}=\sum_{j=1}^{10} 0.3 \times G_{ij}^{my.data}$$
+  
+## The baseline model ROC and AUC   
+
+\tiny
+```{r,echo=FALSE,out.width = '70%',fig.align = "center"}
+alpha.level=c(0.00001,0.01,0.1)
+l.threshold=1
+```
+
+```{r,echo=TRUE,out.width = '85%',fig.align = "center"}
+# generate the ROC plots
+my.PRS.output=generate.my.PRS.output(ex.sumstat,my.data,alpha.level,l.threshold)
+generate.ROC.plot(my.PRS.output)  
+```
+  
+## \tiny the baseline model
+\tiny  
+```{r,echo=TRUE,out.width = '85%',fig.align = "center"}
+generate.association.plot(my.PRS.output)
+```
+
+## \tiny the baseline model
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+ex.sumstat[1:13,]
+```
+\vspace{6pt}  
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+my.data$my.sumstat[1:13,]
+```
+
+## Consider LD now
+
+\tiny
+```{r,echo=FALSE,out.width = '50%',fig.align = "center"}
+# the LD function assumes first ex.nsnp.true are causal and effect size all equal to ex.beta.true & the beta for the tagging SNPs are ZERO.
+generate.ex.sumstat.LD=function(ex.seed,ex.nsample,ex.nsnp,ex.nsnp.true,ex.beta.true,ex.sigma,ex.ntag.T) {
+  set.seed(ex.seed) 
+  ex.G=matrix(-9,nrow = ex.nsample,ncol = ex.nsnp)
+  ex.maf=rep(-9,ex.nsnp) #changes here to duplicate the MAFs accordingly
+  #print(c(ex.nsnp,sum(ex.ntag.T),ex.nsnp-sum(ex.ntag.T)))
+  ex.maf[1:(ex.nsnp-sum(ex.ntag.T))]=runif((ex.nsnp-sum(ex.ntag.T)),min=0.05,max=0.5)
+  
+  # duplicate the MAFs for tagging SNPs if there are tagging SNPs
+  if (sum(ex.ntag.T)>0) {
+    temp2=(ex.nsnp-sum(ex.ntag.T))
+    for(k in 1:ex.nsnp.true) {
+       temp1=temp2+1
+      temp2=temp2+ex.ntag.T[k]
+      ex.maf[temp1:temp2]=ex.maf[k]
+      #print(c(k,temp1,temp2))
+    }
+  }
+  
+  ex.maf.hat=rep(-9,ex.nsnp)
+  # Note that beta for the tagging SNPs are zero, so no changes here
+  ex.beta=c(rep(ex.beta.true,ex.nsnp.true),rep(0,(ex.nsnp-ex.nsnp.true)))
+  ex.betaG=rep(0,ex.nsample)
+  for(j in 1:(ex.nsnp-sum(ex.ntag.T))){ # only simulate data for non tagging SNPs
+    ex.nG=rmultinom(1,size=ex.nsample,prob=c((1-ex.maf[j])^2,2*ex.maf[j]*(1-ex.maf[j]), ex.maf[j]^2))
+    ex.maf.hat[j]=(2*ex.nG[3]+ex.nG[2])/(2*ex.nsample)
+    ex.G[,j]=sample(c(rep(0,ex.nG[1]),rep(1,ex.nG[2]),rep(2,ex.nG[3]))) # shuffle the G; no LD
+    ex.betaG=ex.betaG+ex.beta[j]*ex.G[,j]
+  }
+  
+  # duplicate the Gs for the tagging SNPs if there are tagging SNPs
+  if (sum(ex.ntag.T)>0) {
+    temp2=(ex.nsnp-sum(ex.ntag.T))
+    for(k in 1:ex.nsnp.true) {
+      temp1=temp2+1
+      temp2=temp2+ex.ntag.T[k]
+      ex.G[,temp1:temp2]=ex.G[,k]
+      #print(c(temp1,temp2))
+    }
+    # Update the beta*G result
+    # no need in this case as beta for these tagging SNPs are zero but do it anyway
+    # Also to get beta.hat estimates, should be the same as the causal ones
+    for(j in (ex.nsnp-sum(ex.ntag.T)+1):ex.nsnp){
+      ex.maf.hat[j]=(2*sum(ex.G[,j]==2)+sum(ex.G[,j]==1))/(2*ex.nsample)
+      ex.betaG=ex.betaG+ex.beta[j]*ex.G[,j]
+    }
+  }
+  
+  # simulate the Y now; codes the same as all beta and G specified
+  ex.beta.0=0;ex.e=rnorm(ex.nsample,mean=0,sd=ex.sigma)
+  ex.Y=ex.beta.0+ex.betaG+ex.e
+
+  ex.sumstat=matrix(-9,nrow=ex.nsnp,ncol=7)
+  colnames(ex.sumstat)=c("MAF", "MAF.hat", "beta", "beta.hat", "se", "Z.value", "p.value")
+  for(j in 1:ex.nsnp){
+    ex.fit=lm(ex.Y~ex.G[,j])
+    ex.sumstat[j,]=c(ex.maf[j],ex.maf.hat[j],ex.beta[j],summary(ex.fit)$coefficients[2,])
+  }
+
+  return(ex.sumstat)
+}
+```
+
+\scriptsize
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+# First save the baseline noLD model results for later comparison
+ex.nsnp.noLD=ex.nsnp
+ex.sumstat.noLD=ex.sumstat
+my.data.noLD=my.data
+my.nsnp.noLD=my.nsnp
+my.PRS.output.noLD=my.PRS.output
+
+# Second, specify the ntag.T for each of the nsnp.true, start with 2 for each
+# For now, no null SNPs are tagged, the extreme version of the assumption 
+# that `truly associated SNPs are more likely to be tagged than null SNPs'
+
+# external data 
+ex.nsnp.true=10; ex.beta.true=0.3
+
+# specify the ntag.T for each of the nsnp.true
+ex.ntag.T=rep(2,ex.nsnp.true) 
+#ex.ntag.T=c(1,2,3,4,5,6,7,8,9,10)
+#ex.ntag.T=c(10,9,8,7,6,5,4,3,2,1)
+#ex.ntag.T=c(2,2,1,4,3,10,2,3,7,5)
+
+ex.nsnp=(5000+sum(ex.ntag.T)); ex.nsample=1000; ex.sigma=1; ex.seed=101
+
+# use a new LD-aware data and summary stat function 
+ex.sumstat=generate.ex.sumstat.LD(ex.seed,ex.nsample,ex.nsnp,ex.nsnp.true,ex.beta.true,ex.sigma,ex.ntag.T)
+```
+
+## \tiny the LD ex.model, ntag.T=2
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+ex.sumstat[c(1:12,4999:ex.nsnp),]
+```
+
+## \tiny the LD ex.model, ntag.T=2 
+\tiny
+```{r,echo=TRUE,out.width = '80%',fig.align = "center"}
+generate.sumstat.plot(ex.sumstat,ex.nsnp)
+```
+
+## \tiny compare with no tagging ex.model
+\tiny
+```{r,echo=TRUE,out.width = '80%',fig.align = "center"}
+generate.sumstat.plot(ex.sumstat.noLD,ex.nsnp.noLD)
+```
+
+## The true $h^2$ of our LD model should stay the same, because \small $\beta=0$ for all the tagging SNPs.  
+**GWAS-based estimates may be a different story!**   
+\vspace{12pt}
+
+\tiny
+**Total and SNP $h^2$ of the ex.model**
+```{r,echo=TRUE}
+# the trait h2
+V.G=sum(ex.sumstat[1:ex.nsnp.true,"beta"]^2*(2*ex.sumstat[1:ex.nsnp.true,"MAF"]*(1-ex.sumstat[1:ex.nsnp.true,"MAF"])))
+V.e=ex.sigma^2
+round(V.G/(V.G+V.e),3)
+
+# the causal ones
+V.G.loci=ex.sumstat[1:ex.nsnp.true,"beta"]^2*(2*ex.sumstat[1:ex.nsnp.true,"MAF"]*(1-ex.sumstat[1:ex.nsnp.true,"MAF"]))
+round(V.G.loci/(V.G+V.e),3)
+
+# the tagging ones
+V.G.loci=ex.sumstat[(ex.nsnp-sum(ex.ntag.T)+1):ex.nsnp,"beta"]^2*(2*ex.sumstat[(ex.nsnp-sum(ex.ntag.T)+1):ex.nsnp,"MAF"]*(1-ex.sumstat[(ex.nsnp-sum(ex.ntag.T)+1):ex.nsnp,"MAF"]))
+round(V.G.loci/(V.G+V.e),3)
+```
+\vspace{6pt}
+
+## Move to my.data now
+
+\tiny
+```{r,echo=FALSE,out.width = '50%',fig.align = "center"}
+generate.my.data.LD=function(my.seed,my.nsample,my.nsnp,my.nsnp.true,my.beta.true,my.sigma,my.maf,my.ntag.T) # the function assumes my.nsnp=my.nsp & the first my.nsnp.true are causal and with the same effect size of my.beta.true & the same type tagging SNPs.
+{
+  set.seed(my.seed) 
+  my.data=list()
+  
+  my.G=matrix(-9,nrow = my.nsample,ncol = my.nsnp)
+  # no need for my.maf as it was set the same as ex.maf
+  my.maf.hat=rep(-9,my.nsnp)
+  # Note that beta for the tagging SNPs are zero, so no changes here
+  my.beta=c(rep(my.beta.true,my.nsnp.true),rep(0,(my.nsnp-my.nsnp.true)))
+  
+  my.betaG=rep(0,my.nsample)
+  for(j in 1:(my.nsnp-sum(my.ntag.T))){ # only simulate data for non tagging SNPs
+    my.nG=rmultinom(1,size=my.nsample,prob=c((1-my.maf[j])^2,2*my.maf[j]*(1-my.maf[j]), my.maf[j]^2))
+    my.maf.hat[j]=(2*my.nG[3]+my.nG[2])/(2*my.nsample)
+    my.G[,j]=sample(c(rep(0,my.nG[1]),rep(1,my.nG[2]),rep(2,my.nG[3]))) # shuffle the G; no LD
+    my.betaG=my.betaG+my.beta[j]*my.G[,j]
+  }
+  
+  # duplicate the Gs for the tagging SNPs if there are tagging SNPs
+  if (sum(my.ntag.T)>0) {
+    temp2=(my.nsnp-sum(my.ntag.T))
+    for(k in 1:my.nsnp.true) {
+      temp1=temp2+1
+      temp2=temp2+my.ntag.T[k]
+      my.G[,temp1:temp2]=my.G[,k]
+      #print(c(temp1,temp2))
+    }
+    # Update the beta*G result
+    # no need in this case as beta for these tagging SNPs are zero but do it anyway
+    # Also to get beta.hat estimates, should be the same as the causal ones
+    for(j in (my.nsnp-sum(my.ntag.T)+1):my.nsnp){
+      my.maf.hat[j]=(2*my.nG[3]+my.nG[2])/(2*my.nsample)
+      my.betaG=my.betaG+my.beta[j]*my.G[,j]
+    }
+  }
+  
+  # simulate the Y now; codes the same as all beta and G specified
+  my.beta.0=0;my.e=rnorm(my.nsample,mean=0,sd=my.sigma)
+  my.Y=my.beta.0+my.betaG+my.e
+
+  my.sumstat=matrix(-9,nrow=my.nsnp,ncol=7)
+  colnames(my.sumstat)=c("MAF", "MAF.hat", "beta", "beta.hat", "se", "Z.value", "p.value")
+  for(j in 1:my.nsnp){
+    my.fit=lm(my.Y~my.G[,j])
+    my.sumstat[j,]=c(my.maf[j],my.maf.hat[j],my.beta[j],summary(my.fit)$coefficients[2,])
+  }
+
+  my.data$my.G=my.G
+  my.data$my.Y=my.Y
+  my.data$my.Y.STD=(my.Y-mean(my.Y))/sqrt(var(my.Y))
+  my.data$my.sumstat=my.sumstat
+  
+  return(my.data)
+}
+```
+
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+# my data
+
+my.ntag.T=ex.ntag.T # SAME tagging; no heterogeneity between my. and ex.
+
+my.nsnp.true=10; my.beta.true=0.3; my.maf=ex.sumstat[,"MAF"] 
+my.nsnp=(5000+sum(my.ntag.T)); my.nsample=1000; my.sigma=1; my.seed=102
+
+my.data=generate.my.data.LD(my.seed,my.nsample,my.nsnp,my.nsnp.true,my.beta.true,my.sigma,my.maf,my.ntag.T) 
+```
+
+## Checking our data: my.Y = my.Y.noLD \small (given the same seed etc.)
+\tiny
+```{r,echo=TRUE,out.width = '80%',fig.align = "center"}
+plot(my.data$my.Y,my.data.noLD$my.Y); abline(0,1)
+```
+
+\scriptsize
+**Tagging SNPs have large GWAS Z and small p-values, but their true $\beta=0$.**  
+**Thus, they do not affect how we generate $Y$ based on the true model.**  
+(Multiple causal SNPs in LD is a different story!)  
+
+## \tiny the LD my.model, ntag.T=2
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+my.data$my.sumstat[c(1:12,4999:my.nsnp),]
+```
+
+## Move to PRS now
+
+\small
+We can use the same PRS functions, as PRS construction only depend on ex.sumstat that, which were already generated and checked.   
+\vspace{24pt}
+  
+\scriptsize
+```{r,echo=TRUE,out.width = '80%',fig.align = "center"}
+# Even the ex.nsnp is slightly bigger now, use the same alpha due to LD
+alpha.level=c(0.00001,0.01,0.1) 
+l.threshold=1
+```
+
+## \tiny the LD my.model, ntag.T=2
+\tiny
+```{r,echo=TRUE,out.width = '85%',fig.align = "center"}
+# generate the ROC plots
+my.PRS.output=generate.my.PRS.output(ex.sumstat,my.data,alpha.level,l.threshold)
+generate.ROC.plot(my.PRS.output)
+```
+
+## \tiny the LD my.model, ntag.T=2
+\tiny  
+```{r,echo=TRUE,out.width = '85%',fig.align = "center"}
+generate.association.plot(my.PRS.output)
+```
+
+## Did we make a mistake?! Recall 
+
+\footnotesize
+$$PRS_i^{my.data}=\sum_{j=1}^{J} \hat \beta_j^{external} G_{ij}^{my.data}$$  
+  
+**When $r^2=1$ and $ntag.T=2$ for all the causal SNPS:**  
+$$PRS_i^{my.LD}=\sum_{j=1}^{J_{LD}} \hat \beta_j^{ex.LD} G_{ij}^{my.LD}$$  
+$$=3\times \sum_{j=1;TP}^{J_{noLD}} \hat \beta_j^{ex.noLD} G_{ij}^{my.noLD}+\sum_{j=1;FP}^{J_{noLD}} \hat \beta_j^{ex.noLD} G_{ij}^{my.noLD}$$  
+
+**When FP=0**  
+$$PRS_i^{my.LD}=3 \times PRS_i^{my.noLD}$$  
+
+**PRS.oracle should stay the same** 
+$$PRS_{i,oracle}^{my.LD}=\sum_{j=1}^{J=10} \beta_j\cdot G_{ij}^{my.LD}=\sum_{j=1}^{J=10} \beta_j\cdot G_{ij}^{my.noLD}=PRS_{i,oracle}^{my.noLD}, \text{ where } \beta_j=0.3$$  
+  
+## Check the NON-STD PRS data 
+\tiny
+```{r,echo=FALSE,out.width = '80%',fig.align = "center"}
+par(mfrow=c(2,2))
+plot(my.PRS.output.noLD$my.PRS.oracle,my.PRS.output$my.PRS.oracle)
+abline(0,1)
+plot(my.PRS.output.noLD$my.PRS.alpha[,1],my.PRS.output$my.PRS.alpha[,1],col=my.PRS.output$my.color.index)
+abline(0,3,col="blue")
+plot(my.PRS.output.noLD$my.PRS.alpha[,2],my.PRS.output$my.PRS.alpha[,2],col=my.PRS.output$my.color.index)
+abline(0,1);abline(0,3,col="blue")
+plot(my.PRS.output.noLD$my.PRS.alpha[,3],my.PRS.output$my.PRS.alpha[,3],col=my.PRS.output$my.color.index)
+abline(0,1);abline(0,3,col="blue") 
+```
+\vspace{6pt}  
+
+\footnotesize
+**In this simplest setting** ($r^2=1$ and only causal SNPs are tagged),  
+NOT adjusting LD `=' leveraging LD to improve performance!
+
+## Could consider different types of ntag.T, e.g.  
+
+\tiny
+```{r,echo=TRUE,out.width = '85%',fig.align = "center"}
+
+# only one tagging SNP
+# ex.ntag.T=rep(1,ex.nsnp.true) 
+
+# heterogeneity in the number of tagging SNPs
+# ex.ntag.T=c(1,2,3,4,5,6,7,8,9,10) 
+# ex.ntag.T=c(10,9,8,7,6,5,4,3,2,1)
+# ex.ntag.T=c(2,2,1,4,3,10,2,3,7,5)
+
+# my.ntag.T=ex.ntag.T # SAME tagging; no heterogeneity between my. and ex.
+
+```
+
+**Results are not drastically different, as expected, e.g.**
+
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+
+# external data 
+ex.nsnp.true=10; ex.beta.true=0.3
+# specify the ntag.T for each of the nsnp.true
+ex.ntag.T=c(2,2,1,4,3,10,2,3,7,5)
+ex.nsnp=(5000+sum(ex.ntag.T)); ex.nsample=1000; ex.sigma=1; ex.seed=101
+ex.sumstat=generate.ex.sumstat.LD(ex.seed,ex.nsample,ex.nsnp,ex.nsnp.true,ex.beta.true,ex.sigma,ex.ntag.T)
+
+# my data
+my.ntag.T=ex.ntag.T # SAME tagging; no heterogeneity between my. and ex.
+my.nsnp.true=10; my.beta.true=0.3; my.maf=ex.sumstat[,"MAF"] 
+my.nsnp=(5000+sum(my.ntag.T)); my.nsample=1000; my.sigma=1; my.seed=102
+my.data=generate.my.data.LD(my.seed,my.nsample,my.nsnp,my.nsnp.true,my.beta.true,my.sigma,my.maf,my.ntag.T) 
+```
+
+## \tiny the LD my.model, ntag.T=c(2,2,1,4,3,10,2,3,7,5)
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+my.data$my.sumstat[c(1:12,4999:my.nsnp),]
+```
+
+## \tiny the LD my.model, ntag.T=c(2,2,1,4,3,10,2,3,7,5)
+\tiny
+```{r,echo=TRUE,out.width = '85%',fig.align = "center"}
+# generate the ROC plots
+my.PRS.output=generate.my.PRS.output(ex.sumstat,my.data,alpha.level,l.threshold)
+generate.ROC.plot(my.PRS.output)
+```
+
+## \tiny the LD my.model, ntag.T=c(2,2,1,4,3,10,2,3,7,5) 
+
+\tiny
+```{r,echo=FALSE,out.width = '85%',fig.align = "center"}
+par(mfrow=c(2,2))
+plot(my.PRS.output.noLD$my.PRS.oracle,my.PRS.output$my.PRS.oracle)
+abline(0,1)
+plot(my.PRS.output.noLD$my.PRS.alpha[,1],my.PRS.output$my.PRS.alpha[,1],col=my.PRS.output$my.color.index)
+abline(0,3,col="blue")
+plot(my.PRS.output.noLD$my.PRS.alpha[,2],my.PRS.output$my.PRS.alpha[,2],col=my.PRS.output$my.color.index)
+abline(0,1);abline(0,3,col="blue")
+plot(my.PRS.output.noLD$my.PRS.alpha[,3],my.PRS.output$my.PRS.alpha[,3],col=my.PRS.output$my.color.index)
+abline(0,1);abline(0,3,col="blue") 
+```
+
+## The effect of adding ntag.F for null SNPs?
+
+To do...  Educated guess:  
+
+- AUC stays the same if ntag.T $=$ ntag.F  
+  
+- AUC drops if ntag.T $\neq$ ntag.F  
+  
+- AUC drops more significantly if ntag.T $<$ ntag.F  
+  
+- AUC drops more significantly for less stringent alpha
+
+## Some models/methods not discussed 
+\small 
+
+- GxG and GxE interactions  
+  
+- Bayesian methods  
+  
+- Rare variants  
+  
+- The X chromosome  
+  
+- Pitfalls of standardization (how do we define a case in practice?)  
+  
+- Many more...
+
+
+## Recap of the learning goal:  a **deeper** understanding of  
+\footnotesize
+  
+**1.	PRS foundation: GWAS, h2 and prediction**   
+\vspace{-3pt}  
+  
+- the multiple hypothesis testing issue inherent in GWAS  
+- the (high) variability inherent in the h2 estimates  
+- h2 as a function of both genetic effect beta and MAF  
+- the ‘genetic effect size’ of a SNP as a function of beta and MAF   
+- a conceptual PRS construction based on the ground truth, PRS.oracle  
+- DIY ROC plotting and AUC calculation for a PRS-based prediction  
+  
+**2.	PRS basic: PRS calculation and performance evaluation**  
+\vspace{-3pt}  
+
+- the complexity of constructing a good PRS even under the simplest setting without LD or any heterogeneities; 10 out 5000 independent SNPs are truly associated with the same effect size of 0.3 but varying MAFs.  
+- the trouble introduced by false positives, due to multiple hypothesis testing and low power.  
+-	'the more is not always better' statement: PRS based on 6 `genome-wide’ significant SNPs vs. 66 SNPs significant at 0.01.  
+- the various over-fitting or selection biases, and winner’s curse in beta estimates for both false positives and true positives.  
+
+
+## Learning goal Cont'd, a **deeper** understanding of   
+\footnotesize
+  
+**3.	PRS basic-plus: some obvious or not so obvious follow-up Qs**  
+\vspace{-3pt}  
+
+- Effects of ex.nsample and ex.beta.true on AUC: easy to answer.  
+- Answers to these Qs are less obvious: **If we decrease ex.beta.true from 0.3 to 0.1 but increase ex.nsnp.true from 10 to 90**,  
+   $h^2$ and SNP $h^2$?   
+   AUC in general?  
+   AUC between PRS.gw and PRS.01?  
+  
+**4.	PRS heterogeneity and transportability**  
+\vspace{-3pt}  
+
+- First, why reference allele (genome build) matching is so consequential  
+- Then, population and locus heterogeneity including  
+   my.maf $\neq$ ex.maf  
+   my.beta.true $\neq$ ex.beta.true  
+   my.nsnp.true $\neq$ ex.nsnp.true  
+
+**5. PRS LD consideration**  
+\vspace{-3pt}  
+
+- Some basic understanding of our **limited understanding of LD**.  
+\vspace{6pt}  
+  
+\centerline{\color{red} End of the (hopefully fun) ride!}
