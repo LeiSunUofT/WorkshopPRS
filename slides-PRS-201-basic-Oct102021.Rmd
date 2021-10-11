@@ -1,0 +1,811 @@
+---
+title: Polygenic Risk Score (PRS) Introduction 201 
+subtitle: basic PRS calculation and performance evaluation
+author: Drs. Lei Sun, Wei Deng, Yanyan Zhao
+institute:
+  - Department of Statistical Sciences, FAS  
+  - Division of Biostatistics, DLSPH  
+  - University of Toronto    
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+
+output: 
+  beamer_presentation: 
+    pandoc_args: ["--extract-media", "./extracted-image"]
+# output: word_document
+# output: html_document
+# output: pdf_document
+
+header-includes:
+ - \usepackage{fancyhdr}
+ - \usepackage{amsmath,latexsym}
+ - \hypersetup{colorlinks=true, linkcolor=blue}
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(echo = TRUE)
+# knitr::opts_chunk$set(out.width = '70%') 
+set.seed(1234) 
+library(knitr)
+library(kableExtra)
+library(plotly)
+library(fields) 
+```
+
+## At the end of this lecture, a **deeper** understanding of 
+\begin{itemize}  
+\item the complexity of constructing a good PRS even under the simplest setting {\it without} LD or any heterogeneities..
+\item the trouble introduced by false positives, due to multiple hypothesis testing and low power.
+\item `the more is not always better' statement: PRS based on 6 gw-significant SNPs vs. 66 0.01-significant SNPS.
+\item the various over-fitting or selection biases, and winner’s curse in $\hat \beta$ for both false positives and true positives.
+\end{itemize}
+
+## \footnotesize Recall the illustrative `polygenic' model simulation study 
+\vspace{6pt}
+
+10 out 5000 indep.\ SNPs with **varying `moderate-large' effects** are truly associated with $Y$ (**all $\beta=0.3$ but MAF vary**).  
+\small
+$$Y_i=\sum_{j=1}^{10} \beta_jG_{ij} + e, \text{ where } \beta_j=0.3$$ 
+$$\text{ MAF} \sim \text{  Unif(0.05,0.5)}, \: e\sim N(0,1).$$  
+\vspace{6pt}
+
+\scriptsize
+```{r,echo=TRUE,eval=FALSE}
+nsnp.true=10 # number of truly associated SNPs
+beta.true=0.3 # "large" effect (also MAF, the error term, and the sample size)
+```
+\vspace{6pt}
+
+```{r,echo=FALSE,out.width = '50%',fig.align = "center"}
+set.seed(101) 
+nsample=1000;nsnp=5000 
+G=matrix(-9,nrow = nsample,ncol = nsnp)
+maf=runif(nsnp,min=0.05,max=0.5)
+maf.hat=rep(-9,nsnp)
+nsnp.true=10; beta.true=0.3 # +-sign later
+beta=c(rep(beta.true,nsnp.true),rep(0,(nsnp-nsnp.true)))
+betaG=rep(0,nsample)
+for(j in 1:nsnp){ 
+  nG=rmultinom(1,size=nsample,prob=c((1-maf[j])^2,2*maf[j]*(1-maf[j]), maf[j]^2))
+  maf.hat[j]=(2*nG[3]+nG[2])/(2*nsample)
+  G[,j]=sample(c(rep(0,nG[1]),rep(1,nG[2]),rep(2,nG[3]))) # shuffle the G; no LD
+  betaG=betaG+beta[j]*G[,j]
+}
+beta.0=0;sigma=1;e=rnorm(nsample,mean=0,sd=sigma) 
+Y=beta.0+betaG+e
+
+sumstat=matrix(-9,nrow=nsnp,ncol=7)
+colnames(sumstat)=c("MAF", "MAF.hat", "beta", "beta.hat", "se", "Z.value", "p.value")
+for(j in 1:nsnp){
+  fit=lm(Y~G[,j])
+  sumstat[j,]=c(maf[j],maf.hat[j],beta[j], summary(fit)$coefficients[2,])
+}
+hist(Y,freq=F)
+curve(dnorm(x,mean=mean(Y), sd=sqrt(var(Y))), add=T,lwd=2,col="blue")
+```
+
+## Recall (NOT realistic!) $PRS_{i,oracle}=\sum_{j=1}^{J=10} 0.3 \cdot G_{ij}$ 
+\footnotesize
+
+**The MAF of the 10 truly associated SNPs**  
+```{r,echo=FALSE}
+round(maf[1:nsnp.true],3)
+```
+
+**The SNP heritability vary, despite all $\beta_j=0.3$**  
+```{r,echo=FALSE}
+V.G.loci=beta[1:nsnp.true]^2*(2*maf[1:nsnp.true]*(1-maf[1:nsnp.true]))
+V.G=sum(beta[1:nsnp.true]^2*maf[1:nsnp.true])
+V.e=sigma^2 
+h2.loci=V.G.loci/(V.G+V.e)
+round(h2.loci,3) # h2 contributed by each individual SNP
+```
+
+**The true heritability, $h^2$**  
+```{r,echo=FALSE}
+V.G=sum(beta[1:nsnp.true]^2*(2*maf[1:nsnp.true]*(1-maf[1:nsnp.true])))
+V.e=sigma^2
+h2=V.G/(V.G+V.e)
+round(h2,3)
+```
+
+```{r,echo=FALSE,out.width = '60%',fig.align = "center"}
+# not realistic: if we knew the true value of beta_j and which which j to use, why GWAS!
+PRS.oracle=rep(0,nsample)  
+for (i in 1:nsample) 
+  for (j in 1:nsnp.true) 
+    PRS.oracle[i] = PRS.oracle[i]+beta[j]*G[i,j] 
+par(mfrow=c(1,2))
+hist(PRS.oracle) # not quite normal as J=10 here
+plot(PRS.oracle,Y) # much more predictive than individual SNPs
+
+Y.STD=(Y-mean(Y))/sqrt(var(Y))
+PRS.oracle.STD=(PRS.oracle-mean(PRS.oracle))/sqrt(var(PRS.oracle))
+```
+
+## \footnotesize Recall the (highly significant) association between PRS.orcale and the trait
+\tiny
+```{r,echo=FALSE,out.width = '60%',fig.align = "center"}
+summary(lm(Y.STD~PRS.oracle.STD))
+```
+
+## Recall the liability model, and the case-control stratified PRS distributions   
+\tiny
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+case.index=which(Y.STD>1);control.index=which(Y.STD<=1) # 1 is a subjective choice
+Y.cc=rep("0-Control",nsample); Y.cc[case.index]="1-Case"
+color.index=rep("black",nsample);color.index[case.index]="red" 
+par(mfrow=c(1,2))
+plot(PRS.oracle.STD,Y.STD,col=color.index)
+abline(h=1,col="grey"); abline(v=1,col="blue")
+
+hist(PRS.oracle.STD[control.index],col=rgb(0,0,0,0.1),freq=F,breaks=7,xlim=c(-4,4),main="",xlab="PRS.oracle.STD")
+curve(dnorm(x,mean=mean(PRS.oracle.STD[control.index]), sd=sqrt(var(PRS.oracle.STD[control.index]))), add=T,lwd=2,col="black")
+hist(PRS.oracle.STD[case.index],col=rgb(1,0,0,0.1),breaks=7,freq=F,add=T)
+curve(dnorm(x,mean=mean(PRS.oracle.STD[case.index]), sd=sqrt(var(PRS.oracle.STD[case.index]))),add=T,lwd=2,col="red")
+```
+
+## Recall the ROC curve and AUC using $PRS_{oracle}$
+\footnotesize
+```{r,echo=FALSE,out.width = '80%',fig.align = "center"}
+ncase=sum(Y.cc=="1-Case") # total number of cases
+ncontrol=sum(Y.cc=="0-Control") # total number of controls
+a=seq(4,-2.5,by=-0.5)
+P=rep(-9,length(a));TP=rep(-9,length(a));FP=rep(-9,length(a))
+sensitivity=rep(-9,length(a)); specificity.1=rep(-9,length(a))
+for (k in 1:length(a)) {
+ PRS.threshold=a[k]
+ P[k]=sum(PRS.oracle.STD>PRS.threshold) # number of Positives at this threshold
+ TP[k]=sum(Y.cc[PRS.oracle.STD>PRS.threshold]=="1-Case") # True Positives
+ FP[k]=sum(Y.cc[PRS.oracle.STD>PRS.threshold]=="0-Control") # False Positives
+ sensitivity[k]=TP[k]/ncase # sensitivity, estimated by TP/ncase
+ specificity.1[k]=FP[k]/ncontrol # 1-specificity, estimated by 1 - true negatives/ncontrol
+}
+plot(specificity.1,sensitivity,type="b",pch=20,col="blue",xlab="1 - Specificity = False Positives/ncontrols",ylab="Sensitivity = True Positives/ncases")
+abline(0,1)
+auc=0  
+for (k in 2:length(a)) # Trapezoid's method height*(base1+base2)/2
+  auc = auc + (specificity.1[k]-specificity.1[k-1])*(sensitivity[k]+sensitivity[k-1])/2
+c("AUC of ROC.oracle=",round(auc,3))
+```
+
+## Recall the \color{red}{\bf BUT},
+
+$$ {\bf PRS_{i, oracle}}=\sum_{j=1}^{J=10} \beta_j(=0.3) G_{ij}\:\: \color{red}{\bf \text{\bf is NOT } PRS_{i,parctice}!}$$  
+
+\begin{itemize}
+\item $J$ is unknown, to be determined  
+\item $\beta_j$ is unknown, to be estimated  
+\item  $G_{ij}$ {\bf cannot be directly from the same data used to infer $J$ and $\beta_j$}.  
+\item[] Otherwise: over-fitting/double-dipping/data-dredging/p-hacking/selection-bias!  
+\item Not to mention LD and other considerations in real data settings.
+\end{itemize}
+\vspace{12pt}  
+
+## What we have: $\hat \beta$, $Z$ and p-values
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+par(mfrow=c(2,2))
+hist(sumstat[,"beta.hat"],freq=F)
+curve(dnorm(x,mean=0, sd=(sqrt(var(sumstat[,"beta.hat"])))), add=T,lwd=2,col="blue")
+hist(sumstat[,"Z.value"],freq=F)
+curve(dnorm(x,mean=0, sd=1), add=T,lwd=2,col="blue")
+hist(sumstat[,"p.value"],freq=F)
+abline(h=1,col="blue")
+plot(-log10((seq(1,nsnp,1)-0.5)/nsnp), -log10(sort(sumstat[,"p.value"])),ylab="-log(p-value) Obs", xlab="-log(p-value) Exp",main="QQ-plot of p-value")
+abline(0,1,lwd=2,col="blue")
+```
+
+## \footnotesize Recall the sumstat (the true beta and MAF are here thanks to simulation)
+\tiny
+```{r,echo=FALSE}
+sumstat[1:30,]
+```
+
+## Determine $J$ and Estimate $\beta_j$ using GW significance level 
+\scriptsize
+```{r,echo=TRUE,out.width = '45%',fig.align = "center"}
+J.index=which(sumstat[,"p.value"]<=0.05/nsnp) #10^-5 here for 5000 SNPs
+J.index # the index for the significant SNPs
+c(length(J.index),sum(J.index<=nsnp.true)) # positives, true positives
+round(sumstat[J.index,"beta.hat"],2) # beta estimates for the significant SNPs
+hist(sumstat[J.index,"beta.hat"]); abline(v=beta.true,col="blue")
+```
+
+## A less stringent significance level, say $\alpha=0.01$?  
+
+\small
+\centerline{\bf Trade-off: between false positives (56) and power (10 out 10)}  
+\vspace{3pt} 
+\tiny
+```{r,echo=TRUE,out.width = '50%',fig.align = "center"}
+J.index=which(sumstat[,"p.value"]<=0.01)
+J.index # the index for significant SNPs
+c(length(J.index),sum(J.index<=nsnp.true)) # positives, true positives
+```
+\vspace{6pt}
+
+\small
+\centerline{\bf Trouble ahead: {\color{red}$|\hat \beta_j$| of the FP SNPs} are competitive!}
+
+\tiny
+```{r,echo=FALSE,out.width = '50%',fig.align = "center"}
+hist(abs(sumstat[J.index[-(1:10)],"beta.hat"]),col=rgb(1,0,0,0.1),freq=T,xlim=c(0,0.5),main="Red=FP SNPs vs. Black=TP SNPs",xlab="abs(Estimates of beta)")
+hist(abs(sumstat[J.index[1:10],"beta.hat"]),col=rgb(0,0,0,0.1),freq=T,add=T)
+```
+
+## Top associated SNPs for $PRS_i=\sum_{j=1}^{J} \hat \beta_j G_{ij}$: \color{red}$J$  
+**Genome-wide significance level**  ($\alpha=10^{-5}$ here for 5000 SNPs)  
+    
+- $J=6$  
+- find only 6 out 10 truly associated SNPs 
+- but 0 false positives  
+\vspace{6pt}  
+  
+**A less stringent significance level** ($\alpha=0.01$)  
+  
+- $J=66$
+- find all 10 truly associated SNP
+- but 56 false positives 
+\vspace{6pt}  
+
+\small
+\color{red}Live Quiz 1: Which $\alpha$ threshold will leads to a better PRS (higher AUC)?  
+  
+A: using 6 SNPS with GW significance  
+B: using 66 SNPs with p< 0.01  
+C: ~same
+
+## Effect size estimates in $PRS_i=\sum_{j=1}^{J} \hat \beta_j G_{ij}$: \color{red}$\hat \beta_j$  
+
+**Genome-wide significance level** 
+\tiny
+```{r,echo=TRUE,out.width = '60%',fig.align = "center"}
+J.index=which(sumstat[,"p.value"]<=0.05/nsnp) 
+round(sumstat[J.index,"beta.hat"],2)
+```
+\vspace{6pt}  
+  
+\normalsize
+**A less stringent significance level**  
+\tiny
+```{r,echo=TRUE,out.width = '60%',fig.align = "center"}
+J.index=which(sumstat[,"p.value"]<=0.01) 
+round(sumstat[J.index,"beta.hat"],2)
+```
+\vspace{6pt}    
+
+\normalsize  
+That was too easy! **More considerations** later:  
+
+- Winner's curse (a result of low power) and the MAF connection  
+- heterogeneity and transportability  
+- LD   
+
+## \footnotesize Quiz: patterns for the signicant SNPs?  
+
+\small
+**MAF of the 10 truly associated SNPs**
+```{r,echo=FALSE,out.width = '60%',fig.align = "center"}
+round(sumstat[1:nsnp.true,"MAF"],2)
+```
+\vspace{12pt}
+
+**MAF of the 6 significant SNPs at the GW level**
+```{r,echo=FALSE,out.width = '60%',fig.align = "center"}
+round(sumstat[which(sumstat[,"p.value"]<=0.05/nsnp),"MAF"],2)
+```
+\vspace{12pt}
+
+**Sample estimates of the 6 significant SNPs at the GW level**
+```{r,echo=FALSE,out.width = '60%',fig.align = "center"}
+round(sumstat[which(sumstat[,"p.value"]<=0.05/nsnp),"MAF.hat"],2)
+```
+
+## \footnotesize Quiz cont'd, -log(GWAS p-value) vs. $\hat \beta_j$   
+\vspace{12pt}
+
+\small \centerline{(Red = FP SNPs vs. Black = TP SNPs)} 
+\tiny
+```{r,echo=FALSE,out.width = '70%',fig.align = "center"}
+par(mfrow=(c(1,2)))
+J.index=which(sumstat[,"p.value"]<=0.01) 
+temp=rep("red",length(J.index));temp[1:10]="black" 
+plot(sumstat[J.index,"beta.hat"],-log10(sumstat[J.index,"p.value"]),main="The 66 significant SNPs at the 0.01 level",col=temp,ylim=c(0,10))
+temp=rep("red",nsnp);temp[1:10]="black" 
+plot(sumstat[,"beta.hat"],-log10(sumstat[,"p.value"]),main="All SNPs at the 0.01 level",col=temp)
+```
+\vspace{1cm}
+
+\scriptsize
+<!-- Sun and Bull (2005). *Genetic Epidemiology*. [Reduction of selection bias in genome-wide genetic studies by resampling.](https://pubmed.ncbi.nlm.nih.gov/15761913/)   -->
+Sun et al. (2011). *Human Genetics*. [BR-squared: a practical solution to the winner's curse in genome-wide scans.](https://pubmed.ncbi.nlm.nih.gov/21246217/)
+
+## Can we construct $PRS_i=\sum_{j=1}^{J} \hat \beta_j G_{ij}$ now?  
+What we have using GW $\alpha=10^{-5}$ (for 5000 SNPs):  
+\vspace{12pt}
+
+**The number of SNPs, J**  
+```{r,echo=FALSE}
+J.index=which(sumstat[,"p.value"]<=0.05/nsnp)
+length(J.index) # J
+```
+\vspace{12pt}
+
+**Which specific SNPs**  
+```{r,echo=FALSE}
+J.index
+```
+\vspace{12pt}
+
+**$\hat \beta_j$ of these SNPS**  
+```{r,echo=FALSE}
+round(sumstat[J.index,"beta.hat"],2) # beta estimates for the J SNPs
+```
+
+## WRONG if using $G_{ij}$ from the same data!
+$$PRS_{i,wrong}=\sum_{j=1}^{6} \hat \beta_j G_{ij}$$
+\vspace{6pt}
+\tiny
+```{r,echo=FALSE,out.width = '60%',fig.align = "center"}
+PRS.wrong=rep(0,nsample) 
+for (i in 1:nsample) {
+  for (j in 1:length(J.index))
+    PRS.wrong[i] = PRS.wrong[i]+sumstat[J.index[j],"beta.hat"]*G[i,J.index[j]]
+}
+PRS.wrong.STD=(PRS.wrong-mean(PRS.wrong))/sqrt(var(PRS.wrong))
+par(mfrow=c(1,2))
+hist(PRS.wrong.STD)
+plot(PRS.wrong.STD,Y.STD,col=color.index);abline(a=lm(Y.STD~PRS.wrong.STD)$coef[1],b=lm(Y.STD~PRS.wrong.STD)$coef[2],lty=2)  
+```
+\vspace{12pt}
+
+\normalsize
+This PRS.wrong appears to be ~normally distributed and highly predictive of the outcome, BUT **due to over-fitting!**
+
+## If you are not fully convinced of \color{red}{the over-fitting issue:}
+
+\small
+Using $\alpha=0.01$ BUT exclude the all the true positives. That is, **using only the following 56 false positive SNPs to construct PRS:** 
+\tiny
+```{r,echo=FALSE}
+J.index=which(sumstat[,"p.value"]<=0.01)
+J.index=J.index[11:length(J.index)]
+length(J.index) # J
+J.index
+```
+\vspace{8pt}
+
+\small
+**Their effect size sample estimates:**
+\tiny
+```{r,echo=FALSE}
+round(sumstat[J.index,"beta.hat"],2)
+```
+\vspace{8pt}
+
+\small
+**Their MAF sample estimates:**   
+\tiny
+```{r,echo=FALSE}
+round(sumstat[J.index,"MAF.hat"],2)
+```
+
+## PRS, using only null SNPs, is predictive: clearly WRONG! 
+\vspace{12pt}
+
+\tiny
+```{r,echo=FALSE,out.width = '80%',fig.align = "center"}
+PRS.wrong=rep(0,nsample) 
+for (i in 1:nsample) {
+  for (j in 1:length(J.index))
+    PRS.wrong[i] = PRS.wrong[i]+sumstat[J.index[j],"beta.hat"]*G[i,J.index[j]]
+}
+PRS.wrong.STD=(PRS.wrong-mean(PRS.wrong))/sqrt(var(PRS.wrong))
+par(mfrow=c(1,2))
+hist(PRS.wrong.STD, main="PRS from using 56 false positive SNPs")
+plot(PRS.wrong.STD,Y.STD,col=color.index);abline(a=lm(Y.STD~PRS.wrong.STD)$coef[1],b=lm(Y.STD~PRS.wrong.STD)$coef[2],lty=2)  
+```
+\vspace{12pt}
+
+## Obtaining a significant result $\neq$ a correct result! 
+\small
+\bf This PRS.wrong, constructed from the 56 null SNPs, is actually more significantly associated with the phenotype than PRS.oracle: {\color{red}{clearly wrong!}}  
+\vspace{12pt}
+
+\tiny
+```{r,echo=FALSE,out.width = '60%',fig.align = "center"}
+summary(lm(Y.STD~PRS.wrong.STD))
+```
+
+## Cannot be overemphasized  
+
+A predictive (and normally distributed) PRS, on its own, is not evidence for correct PRS calculation!  
+\vspace{24pt}
+
+**Remember the superscripts** in your PRS calculation: 
+$$\hat \beta_j^{\color{red}{external\: (base,\: discovery)}} \times G_{ij}^{\color{red}{my.data\: (target,\: validation)}}$$  
+\vspace{24pt}
+
+Surely we will not make this rookie mistake! BUT,  
+  
+**over-fitting can appear in other (subtler) forms**,  e.g.  
+overlapping samples between the external and my data, or  
+pleitropy studies of multiple phenotypes from a single sample 
+
+
+## How to construct \color{red}$PRS_i=\sum_{j=1}^{J} \hat \beta_j G_{ij}$ then? e.g. **The simplest scenario**    
+  
+Obtain the $J$ and $\hat \beta_j$ from **an external data set**.  
+\vspace{24pt} 
+
+The external data set resembles our own data set perfectly, i.e.  
+**no heterogeneity** in population, sampling design etc.   
+\vspace{24pt}  
+
+Calculate the $PRS_i$ for each individual $i$ in our own sample for prediction:   
+$$PRS_i^{my.data}=\sum_{j=1}^{J} \hat \beta_j^{external} G_{ij}^{my.data}$$
+  
+## Simulate an independent set of data, my.data  
+
+\scriptsize
+```{r,echo=TRUE,out.width = '60%',fig.align = "center"}
+# Assume the previous data was the external data
+# the external model was 
+# nsnp=5000; nsnp.true=10; beta.true=0.3; beta.0=0; sigma=1
+
+# Use the SAME MODEL but a DIFFERNT SEE to generate new independent data
+
+set.seed(102)
+
+my.nsample=1000 # my. is for my own data for prediction or validation
+my.nsnp=nsnp # no heterogeneity: the same number of SNPs
+my.maf=maf # no heterogeneity: the same MAF as before 
+my.nsnp.true=nsnp.true # no heterogeneity: the same number of truly associated SNPs as before
+my.beta.true=beta.true # no heterogeneity: the same effect size as before
+my.beta=c(rep(my.beta.true,my.nsnp.true),rep(0,(my.nsnp-my.nsnp.true))) 
+```
+
+```{r,echo=FALSE,out.width = '60%',fig.align = "center"}
+my.maf.hat=rep(-9,my.nsnp) 
+my.G=matrix(-9,nrow = my.nsample,ncol = nsnp)
+my.betaG=rep(0,my.nsample)
+
+for(j in 1:nsnp){ 
+  my.nG=rmultinom(1,size=my.nsample,prob=c((1-my.maf[j])^2,2*my.maf[j]*(1-my.maf[j]), my.maf[j]^2))
+  my.maf.hat[j]=(2*my.nG[3]+my.nG[2])/(2*my.nsample) # MAF estimated from the sample 
+  my.G[,j]=sample(c(rep(0,my.nG[1]),rep(1,my.nG[2]),rep(2,my.nG[3]))) 
+  my.betaG=my.betaG+my.beta[j]*my.G[,j]
+}
+my.beta.0=0;my.sigma=1;my.e=rnorm(my.nsample,mean=0,sd=my.sigma)
+my.Y=my.beta.0+my.betaG+my.e # the phenotype vector
+
+my.sumstat=matrix(-9,nrow=nsnp,ncol=7)
+colnames(my.sumstat)=c("MAF", "MAF.hat", "beta", "beta.hat", "se", "Z.value", "p.value")
+for(j in 1:nsnp){
+  my.fit=lm(my.Y~my.G[,j])
+  my.sumstat[j,]=c(my.maf[j],my.maf.hat[j],my.beta[j],summary(my.fit)$coefficients[2,])
+}
+```
+
+## 
+
+**Using the same model as above (no heterogeneity)**:  
+10 out 5000 SNPs are truly associated with `moderate-large' effect  
+$$Y_i^{my.data}=\sum_{j=1}^{10} 0.3\times G_{ij}^{my.data} + e^{my.data}, \text{ where } e^{my.data}\sim N(0,1) $$ 
+\vspace{6pt}
+
+**MAFs stay the same as the external data (no heterogeneity)**,  
+and recall the MAFs of the 10 truly associated SNPs:
+```{r,echo=FALSE}
+round(my.maf[1:nsnp.true],2)
+```
+\vspace{12pt}
+
+The sample size does not have to be the same, but for now we use my.nsample=1000.
+
+## \footnotesize EDA (exploratory data analysis) of my.data  
+```{r,echo=FALSE, out.width = '90%',fig.align = "center"}
+par(mfrow=c(2,2))
+hist(my.Y,freq=F)
+j=1
+plot(my.G[,j],my.Y,main=paste("SNP 1, MAF=",round(my.sumstat[j,"MAF"],2), ", MAF.hat=",round(my.sumstat[j,"MAF.hat"],2), sep=""),xlab="my.G SNP 1")
+my.fit=lm(my.Y~my.G[,j]); abline(a=my.fit$coef[1],b=my.fit$coef[2],lty=2)
+j=2
+plot(my.G[,j],my.Y,main=paste("SNP 2, MAF=",round(my.sumstat[j,"MAF"],2), ", MAF.hat=",round(my.sumstat[j,"MAF.hat"],2), sep=""),xlab="my.G SNP 2")
+my.fit=lm(my.Y~my.G[,j]); abline(a=my.fit$coef[1],b=my.fit$coef[2],lty=2)
+j=3
+plot(my.G[,j],my.Y,main=paste("SNP 3, MAF=",round(my.sumstat[j,"MAF"],2), ", MAF.hat=",round(my.sumstat[j,"MAF.hat"],2), sep=""),xlab="my.G SNP 3")
+my.fit=lm(my.Y~my.G[,j]); abline(a=my.fit$coef[1],b=my.fit$coef[2],lty=2)
+```
+
+##  
+\footnotesize 
+**my.sumstat** (the true beta and MAF are here thanks to simulation)
+\tiny
+```{r,echo=FALSE}
+my.sumstat[1:13,]
+```
+
+\footnotesize 
+compared with the **ex.sumstat** from the external data
+\tiny
+```{r,echo=FALSE}
+sumstat[1:13,]
+```
+
+## Finally, \color{red}$PRS_i=\sum_{j=1}^{J} \hat \beta_j G_{ij}$  
+\footnotesize
+**Using GW threshold on the external data**  
+$$my.PRS_{GW}=\sum_{j=1}^{6\: Positives \: (all\:  TP)} \hat \beta_j^{external}\times G_{ij}^{my.data}$$ 
+**Using the $\alpha=0.01$ threshold on the external data**  
+$$my.PRS_{.01}=\sum_{j=\{1:10,324,...,4935\}}^{66\: Positives \: 
+(10\: TP)} \hat \beta_j^{external}\times G_{ij}^{my.data}$$
+\vspace{3pt}
+
+**Using the $\alpha=0.01$ threshold on the external data AND use only the false positives** (made possible by the simulation and should NOT be predictive when calculated correctly!)
+$$my.PRS_{.01.null}=\sum_{j=\{324,...,4935\}}^{56\: False\: Positives} \hat \beta_j^{external}\times G_{ij}^{my.data}$$
+**The oracle one** (made possible by the simulation)
+$$my.PRS_{Oracle}=\sum_{j=1}^{all\: 10\: causal\: ones} 0.3 \times G_{ij}^{my.data}$$
+
+\tiny
+```{r,echo=FALSE,out.width = '50%',fig.align = "center"}
+my.PRS.GW=rep(0,my.nsample) 
+my.PRS.01=rep(0,my.nsample)
+my.PRS.01.null=rep(0,my.nsample)
+my.PRS.oracle=rep(0,my.nsample) 
+# J index & beta.hat from the external data 
+for (i in 1:my.nsample) {
+  J.index=which(sumstat[,"p.value"]<=0.05/nsnp) 
+  for (j in 1:length(J.index)) 
+    my.PRS.GW[i] = my.PRS.GW[i]+sumstat[J.index[j],"beta.hat"]*my.G[i,J.index[j]]
+  J.index=which(sumstat[,"p.value"]<=0.01) 
+  for (j in 1:length(J.index))
+    my.PRS.01[i] = my.PRS.01[i]+sumstat[J.index[j],"beta.hat"]*my.G[i,J.index[j]]
+  J.index=J.index[11:length(J.index)]
+  for (j in 1:length(J.index))
+    my.PRS.01.null[i] = my.PRS.01.null[i]+sumstat[J.index[j],"beta.hat"]*my.G[i,J.index[j]]
+  for (j in 1:my.nsnp.true)  
+    my.PRS.oracle[i] = my.PRS.oracle[i]+my.beta[j]*my.G[i,j] 
+}
+```
+
+## \footnotesize Raw and standardized (STD) of the PRSs constructed
+\tiny  
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+my.Y.STD=(my.Y-mean(my.Y))/sqrt(var(my.Y)) # sample-specific rescaling can be a problem 
+my.case.index=which(my.Y.STD>1);my.control.index=which(my.Y.STD<=1) # in the presence of heterogeneity between two datasets 
+my.color.index=rep("black",my.nsample);my.color.index[my.case.index]="red" 
+
+my.PRS.GW.STD=(my.PRS.GW-mean(my.PRS.GW))/sqrt(var(my.PRS.GW)) # this sample rescaling is not possible without a sample of my.data, using the external data can be tricky as well: heterogeneity and PRS_external overting
+my.PRS.01.STD=(my.PRS.01-mean(my.PRS.01))/sqrt(var(my.PRS.01))
+my.PRS.01.null.STD=(my.PRS.01.null-mean(my.PRS.01.null))/sqrt(var(my.PRS.01.null))
+my.PRS.oracle.STD=(my.PRS.oracle-mean(my.PRS.oracle))/sqrt(var(my.PRS.oracle))
+
+par(mfrow=c(2,4))
+hist(my.PRS.oracle);hist(my.PRS.GW);hist(my.PRS.01);hist(my.PRS.01.null)
+hist(my.PRS.oracle.STD);hist(my.PRS.GW.STD);hist(my.PRS.01.STD);hist(my.PRS.01.null.STD)
+```
+
+## Performance of the PRSs, from the association perspective
+\tiny  
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+par(mfrow=c(1,4))
+plot(my.PRS.oracle.STD,my.Y.STD,col=my.color.index)
+fit=lm(my.Y.STD~my.PRS.oracle.STD);abline(a=fit$coef[1],b=fit$coef[2],lty=2)
+temp=summary(fit)$coefficients[2,]
+plot(my.PRS.GW.STD,my.Y.STD,col=my.color.index)
+fit=lm(my.Y.STD~my.PRS.GW.STD);abline(a=fit$coef[1],b=fit$coef[2],lty=2)
+temp=rbind(temp,summary(fit)$coefficients[2,])
+plot(my.PRS.01.STD,my.Y.STD,col=my.color.index)
+fit=lm(my.Y.STD~my.PRS.01.STD);abline(a=fit$coef[1],b=fit$coef[2],lty=2)
+temp=rbind(temp,summary(fit)$coefficients[2,])
+plot(my.PRS.01.null.STD,my.Y.STD,col=my.color.index)
+fit=lm(my.Y.STD~my.PRS.01.null.STD);abline(a=fit$coef[1],b=fit$coef[2],lty=2)
+temp=rbind(temp,summary(fit)$coefficients[2,])
+c("slope.hat", round(temp[1,1],3), round(temp[2,1],3), round(temp[3,1],3), round(temp[4,1],3))
+c("Z.value", round(temp[1,3],3), round(temp[2,3],3), round(temp[3,3],3), round(temp[4,3],3))
+c("p.value", signif(temp[1,4],digits=4),signif(temp[2,4],3), signif(temp[3,4],3), round(temp[4,4],3))
+```
+
+##
+**$PRS{.01.null}$ is NOT associated with the trait as expected!**  
+\tiny
+```{r,echo=FALSE,out.width = '80%',fig.align = "center"}
+summary(lm(my.Y.STD~my.PRS.01.null.STD))$coefficients
+```
+\vspace{6pt}  
+\normalsize
+**$PRS_{oracle}$ is the best, but $PRS_{oracle}$ is not realistic!**  
+\tiny
+```{r,echo=FALSE,out.width = '80%',fig.align = "center"}
+summary(lm(my.Y.STD~my.PRS.oracle.STD))$coefficients
+```
+\vspace{6pt}   
+\normalsize
+**$PRS_{GW}$ is significantly associated with the phenotype, but less so than $PRS_{oracle}$ as it should be**
+\tiny  
+```{r,echo=FALSE,out.width = '80%',fig.align = "center"}
+summary(lm(my.Y.STD~my.PRS.GW.STD))$coefficients
+```
+\vspace{6pt}   
+\normalsize
+**More is not necessarily better: $PRS_{.01} (J=66)$ is worse than $PRS_{GW} (J=6)$ \color{red}{in this case}** 
+\tiny  
+```{r,echo=FALSE,out.width = '80%',fig.align = "center"}
+summary(lm(my.Y.STD~my.PRS.01.STD))$coefficients
+```
+
+## Case-control stratified distributions of the different PRSs
+\tiny
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+par(mfrow=c(2,2))
+
+hist(my.PRS.oracle.STD[my.control.index],col=rgb(0,0,0,0.1),freq=F,breaks=7,xlim=c(-4,4),ylim=c(0,0.5), main="my.PRS.oracle.STD",xlab="")
+curve(dnorm(x,mean=mean(my.PRS.oracle.STD[my.control.index]), sd=sqrt(var(my.PRS.oracle.STD[my.control.index]))), add=T,lwd=2,col="black")
+hist(my.PRS.oracle.STD[my.case.index],col=rgb(1,0,0,0.1),breaks=7,freq=F,add=T)
+curve(dnorm(x,mean=mean(my.PRS.oracle.STD[my.case.index]), sd=sqrt(var(my.PRS.oracle.STD[my.case.index]))),add=T,lwd=2,col="red")
+
+hist(my.PRS.GW.STD[my.control.index],col=rgb(0,0,0,0.1),freq=F,breaks=7,xlim=c(-4,4),ylim=c(0,0.5),main="my.PRS.GW.STD",xlab="")
+curve(dnorm(x,mean=mean(my.PRS.GW.STD[my.control.index]), sd=sqrt(var(my.PRS.GW.STD[my.control.index]))), add=T,lwd=2,col="black")
+hist(my.PRS.GW.STD[my.case.index],col=rgb(1,0,0,0.1),breaks=7,freq=F,add=T)
+curve(dnorm(x,mean=mean(my.PRS.GW.STD[my.case.index]), sd=sqrt(var(my.PRS.GW.STD[my.case.index]))),add=T,lwd=2,col="red")
+
+hist(my.PRS.01.STD[my.control.index],col=rgb(0,0,0,0.1),freq=F,breaks=7,xlim=c(-4,4),ylim=c(0,0.5),main="my.PRS.01.STD",xlab="")
+curve(dnorm(x,mean=mean(my.PRS.01.STD[my.control.index]), sd=sqrt(var(my.PRS.01.STD[my.control.index]))), add=T,lwd=2,col="black")
+hist(my.PRS.01.STD[my.case.index],col=rgb(1,0,0,0.1),breaks=7,freq=F,add=T)
+curve(dnorm(x,mean=mean(my.PRS.01.STD[my.case.index]), sd=sqrt(var(my.PRS.01.STD[my.case.index]))),add=T,lwd=2,col="red")
+
+hist(my.PRS.01.null.STD[my.control.index],col=rgb(0,0,0,0.1),freq=F,breaks=7,xlim=c(-4,4),ylim=c(0,0.5),main="my.PRS.01.null.STD",xlab="")
+curve(dnorm(x,mean=mean(my.PRS.01.null.STD[my.control.index]), sd=sqrt(var(my.PRS.01.null.STD[my.control.index]))), add=T,lwd=2,col="black")
+hist(my.PRS.01.null.STD[my.case.index],col=rgb(1,0,0,0.1),breaks=7,freq=F,add=T)
+curve(dnorm(x,mean=mean(my.PRS.01.null.STD[my.case.index]), sd=sqrt(var(my.PRS.01.null.STD[my.case.index]))),add=T,lwd=2,col="red")
+```
+
+## Performance of the PRSs, from the prediction perspective
+
+\tiny
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+my.Y.cc=rep("0-Control",my.nsample); my.Y.cc[my.case.index]="1-Case"
+my.ncase=sum(my.Y.cc=="1-Case") # total number of cases
+my.ncontrol=sum(my.Y.cc=="0-Control") # total number of controls
+a=seq(4,-2.5,by=-0.5)
+P=rep(-9,length(a));TP=rep(-9,length(a));FP=rep(-9,length(a))
+sensitivity=rep(-9,length(a)); specificity.1=rep(-9,length(a))
+
+method=c("PRS.oracle","PRS.GW","PRS.01","PRS.01.null")
+auc.method=rep(0,4)
+
+PRS=my.PRS.oracle.STD
+for (k in 1:length(a)) {
+ PRS.threshold=a[k]
+ P[k]=sum(PRS>PRS.threshold) 
+ TP[k]=sum(my.Y.cc[PRS>PRS.threshold]=="1-Case") 
+ FP[k]=sum(my.Y.cc[PRS>PRS.threshold]=="0-Control") 
+ sensitivity[k]=TP[k]/my.ncase 
+ specificity.1[k]=FP[k]/my.ncontrol 
+}
+plot(specificity.1,sensitivity,type="b",pch=20,col="gray",xlab="1 - Specificity = False Positives/ncontrols",ylab="Sensitivity = True Positives/ncases")
+abline(0,1)
+auc=0  
+for (k in 2:length(a)) # Trapezoid's method height*(base1+base2)/2
+  auc = auc + (specificity.1[k]-specificity.1[k-1])*(sensitivity[k]+sensitivity[k-1])/2
+auc.method[1]=auc
+
+PRS=my.PRS.GW.STD
+for (k in 1:length(a)) {
+ PRS.threshold=a[k]
+ P[k]=sum(PRS>PRS.threshold) 
+ TP[k]=sum(my.Y.cc[PRS>PRS.threshold]=="1-Case") 
+ FP[k]=sum(my.Y.cc[PRS>PRS.threshold]=="0-Control") 
+ sensitivity[k]=TP[k]/my.ncase 
+ specificity.1[k]=FP[k]/my.ncontrol 
+}
+lines(specificity.1,sensitivity,type="b",pch=20,col="red")
+auc=0  
+for (k in 2:length(a)) # Trapezoid's method height*(base1+base2)/2
+  auc = auc + (specificity.1[k]-specificity.1[k-1])*(sensitivity[k]+sensitivity[k-1])/2
+auc.method[2]=auc
+
+PRS=my.PRS.01.STD
+for (k in 1:length(a)) {
+ PRS.threshold=a[k]
+ P[k]=sum(PRS>PRS.threshold) 
+ TP[k]=sum(my.Y.cc[PRS>PRS.threshold]=="1-Case") 
+ FP[k]=sum(my.Y.cc[PRS>PRS.threshold]=="0-Control") 
+ sensitivity[k]=TP[k]/my.ncase 
+ specificity.1[k]=FP[k]/my.ncontrol 
+}
+lines(specificity.1,sensitivity,type="b",pch=20,col="blue")
+auc=0  
+for (k in 2:length(a)) # Trapezoid's method height*(base1+base2)/2
+  auc = auc + (specificity.1[k]-specificity.1[k-1])*(sensitivity[k]+sensitivity[k-1])/2
+auc.method[3]=auc
+
+PRS=my.PRS.01.null.STD
+for (k in 1:length(a)) {
+ PRS.threshold=a[k]
+ P[k]=sum(PRS>PRS.threshold) 
+ TP[k]=sum(my.Y.cc[PRS>PRS.threshold]=="1-Case") 
+ FP[k]=sum(my.Y.cc[PRS>PRS.threshold]=="0-Control") 
+ sensitivity[k]=TP[k]/my.ncase 
+ specificity.1[k]=FP[k]/my.ncontrol 
+}
+lines(specificity.1,sensitivity,type="b",pch=20,col="green")
+auc=0  
+for (k in 2:length(a)) # Trapezoid's method height*(base1+base2)/2
+  auc = auc + (specificity.1[k]-specificity.1[k-1])*(sensitivity[k]+sensitivity[k-1])/2
+auc.method[4]=auc
+
+legend(0.6, 0.37, paste(round(auc.method,3),method), lty=1, lwd=2, col = c("gray","red","blue","green"),cex=1.3)
+
+#c("my.ncase=",my.ncase, "my.ncontrol=",my.ncontrol)
+```
+
+## \footnotesize Undertanding of the main diagonal line and AUC=50\% of a non-predictive PRS
+
+\scriptsize
+- Recall the scatter plot for the non-predictive PRS.0.01.null.STD
+```{r,echo=FALSE,out.width = '30%',fig.align = "center"}
+plot(my.PRS.01.null.STD,my.Y.STD,col=my.color.index)
+abline(v=1,col="blue")
+```
+
+- Let $K<1$ be the population prevalence of the disease, so out of a total of $n$ samples, expect $n_{case}=n\cdot K$. 
+
+- For each threshold $t$ used to call $P_t$ samples positives (cases), 
+
+- Because the PRS used is not predictive, the expected true positives, $TP_t=P_t \cdot K$, and the expected 
+$\mbox{sensitivity} =\frac{TP_t}{n_{case}} = \frac{P_t\cdot K}{n\cdot K} = \frac{P_t}{n}.$
+
+- Similarly, the expected false positives, $FP_t=P_t \cdot (1-K)$, and the expected
+$1-\mbox{specificity} =\frac{FP_t}{n_{control}} = \frac{P_t\cdot (1-K)}{n\cdot (1-K)} = \frac{P_t}{n}.$
+
+- Thus, sensitivity ($x$) = 1-specificity ($y$) across the whole $\frac{P_t=0}{n}=0$ to $\frac{P_t=n}{n}=1$ range. That is, ROC of a non-predictive PRS is (expected) to be the main diagonal line ($x=y$), and AUC=50\%.
+
+## \footnotesize Quiz: How can two PRSs with very different predictive performance be highly correlated?
+
+\tiny  
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+par(mfrow=c(2,3))
+
+plot(my.PRS.GW.STD,my.PRS.oracle.STD,col=my.color.index,xlim=c(-4,4),ylim=c(-4,4))
+fit=lm(my.PRS.oracle.STD~my.PRS.GW.STD);abline(a=fit$coef[1],b=fit$coef[2],col="blue")
+title(main=(paste(round(summary(fit)$coefficients[2,1],3)," (", signif(summary(fit)$coefficients[2,4],3),")",sep="")))
+
+plot(my.PRS.01.STD,my.PRS.oracle.STD,col=my.color.index,xlim=c(-4,4),ylim=c(-4,4))
+fit=lm(my.PRS.oracle.STD~my.PRS.01.STD);abline(a=fit$coef[1],b=fit$coef[2],col="blue")
+title(main=(paste(round(summary(fit)$coefficients[2,1],3)," (", signif(summary(fit)$coefficients[2,4],3),")",sep="")))
+
+plot(my.PRS.01.null.STD,my.PRS.oracle.STD,col=my.color.index,xlim=c(-4,4),ylim=c(-4,4)) 
+fit=lm(my.PRS.oracle.STD~my.PRS.01.null.STD);abline(a=fit$coef[1],b=fit$coef[2],col="blue")
+title(main=(paste(round(summary(fit)$coefficients[2,1],3)," (", signif(summary(fit)$coefficients[2,4],3),")",sep="")))
+
+plot(my.PRS.01.STD,my.PRS.GW.STD,col=my.color.index,xlim=c(-4,4),ylim=c(-4,4))
+fit=lm(my.PRS.GW.STD~my.PRS.01.STD); abline(a=fit$coef[1],b=fit$coef[2],col="blue")
+title(main=(paste(round(summary(fit)$coefficients[2,1],3)," (", signif(summary(fit)$coefficients[2,4],3),")",sep="")))
+
+plot(my.PRS.01.null.STD,my.PRS.GW.STD,col=my.color.index,xlim=c(-4,4),ylim=c(-4,4))
+fit=lm(my.PRS.GW.STD~my.PRS.01.null.STD);abline(a=fit$coef[1],b=fit$coef[2],col="blue")
+title(main=(paste(round(summary(fit)$coefficients[2,1],3)," (", signif(summary(fit)$coefficients[2,4],3),")",sep="")))
+
+plot(my.PRS.01.null.STD,my.PRS.01.STD,col=my.color.index,xlim=c(-4,4),ylim=c(-4,4))
+fit=lm(my.PRS.01.STD~my.PRS.01.null.STD);abline(a=fit$coef[1],b=fit$coef[2],col="blue")
+title(main=(paste(round(summary(fit)$coefficients[2,1],3)," (", signif(summary(fit)$coefficients[2,4],3),")",sep="")))
+```
+
+## Recap the goal of this lecture: a **deeper** understanding of 
+\small
+\begin{itemize}  
+\item the complexity of constructing a good PRS even under the simplest setting {\it without} LD or any heterogeneties.
+\item the trouble introduced by false positives, due to multiple hypothesis testing and low power.
+\item `the more is not always better' statement: PRS based on 6 gw-significant SNPs vs. 66 0.01-significant SNPS.
+\item the various over-fitting or selection biases, $\hat \beta$ for a false positive or a true positive.
+\end{itemize}
+
+**What's next**  
+\begin{itemize}
+\item Effects of ex.nsample and ex.beta.true on AUC: easy to answer.
+\item Answers to these Qs are less obvious: {\bf If we decrease ex.beta.true from 0.3 to 0.1 but increase ex.nsnp.true from 10 to 90},
+\item[] \hspace{6pt} $h^2$ and SNP $h^2$? 
+\item[] \hspace{6pt} AUC in general?
+\item[] \hspace{6pt} AUC between PRS.gw and PRS.01?  
+\end{itemize}

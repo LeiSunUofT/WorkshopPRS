@@ -1,0 +1,768 @@
+---
+title: Polygenic Risk Score (PRS) Introduction 101
+subtitle: GWAS, $h^2$ and prediction as the foundation
+author: Drs. Lei Sun, Wei Deng, Yanyan Zhao
+institute:
+  - Department of Statistical Sciences, FAS  
+  - Division of Biostatistics, DLSPH  
+  - University of Toronto    
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+
+output: 
+  beamer_presentation: 
+    pandoc_args: ["--extract-media", "./extracted-image"]
+# output: word_document
+# output: html_document
+# output: pdf_document
+
+header-includes:
+ - \usepackage{fancyhdr}
+ - \usepackage{amsmath,latexsym}
+ - \hypersetup{colorlinks=true, linkcolor=blue}
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(echo = TRUE)
+# knitr::opts_chunk$set(out.width = '70%') 
+set.seed(1234) 
+library(knitr)
+library(kableExtra)
+library(plotly)
+library(fields) 
+```
+
+## At the end of this lecture, a **deeper** understanding of 
+\begin{itemize}  
+\item the multiple hypothesis testing issue inherent in GWAS  
+\item the (high) variability inherent in $\hat \beta$, the $\beta$ estimates 
+\item heritability $h^2$ as a function of both $\beta$ and MAF (and $\sigma^2$) 
+\item  the `genetic effect size' of a SNP $= \beta^2 \cdot \mbox{MAF}\cdot(1-\mbox{MAF})$
+\vspace{6pt} 
+\item a conceptual PRS construction based on the ground truth, PRS.oracle
+\item DIY ROC plotting and AUC calculation for a PRS-based prediction 
+\end{itemize}
+
+## GWAS is the foundation of PRS, providing $J$ and $\hat \beta_j$ in $PRS_i=\sum_{j=1}^{J} \hat \beta_j G_{ij}$  
+$Y\text{ (phenotype)}=\beta_0+{\color{red}{\beta_j}} G_j \text{ (genotype)}+ \beta_E E \text{ (envir.)}+e \text{ (error)},$ 
+\centerline{$\color{red}{H_0: \beta_j=0},$}  
+\small
+where $e\sim N(0, \sigma^2)$, **$j=1\ldots > 10^6$ for all SNPs across the genome**.  
+\vspace{3pt}
+\footnotesize
+(Could be more complex: multiple $E's$ and $G$'s, GxE, and GxG interactions)  
+
+\vspace{12pt}
+\normalsize
+**$G_j$: Genotype of a (bi-allelic, autosomal) SNP $j$**  
+\small
+\begin{itemize}
+\item coded 0, 1 and 2 for $aa$, $Aa$ and $AA$    
+\item $a=$ the reference allele  
+\item $A=$ the alternative allele (often the minor allele with MAF of $p$)  
+\item freq. of $aa$, $Aa$ and $AA$: $(1-p)^2$, $2p(1-p)$ and $p^2$ under HWE 
+\end{itemize}
+
+## GWAS Paper `0' 
+
+WTCCC (2007). *Nature*. [Genome-wide association study of 14,000 cases of seven common diseases and 3,000 shared controls](https://pubmed.ncbi.nlm.nih.gov/17554300/). 
+\vspace{6pt}
+\small
+\begin{itemize}
+\item Phenotypes: Seven major diseases, e.g. Bipolar, Hypertension  
+\item Samples: $\approx$ 2000 cases and (shared) 3000 controls for each disease  
+\item SNPs: Affymetrix 500K  
+\item Analyses: {\bf much effort on quality control (QC)}, simple association tests, novel imputation method. 
+\item Results: 24 independent association signals at p-value $< 5\cdot 10^{-7}$ \scriptsize
+\item[] almost all true positives based on previous or replication studies
+\item[] Some of the loci confer risk for multiple diseases
+\item[] 58 additional loci at $10^{-5}<$ p-value $<5\cdot 10^{-7}$
+\end{itemize}
+
+## \footnotesize  QQ-plot, Figure 3 of WTCCC 2007
+![](https://utstat.toronto.edu/sun/art/fig-wtccc-fig3.png){width=80%}  
+\vspace{6pt}
+
+\tiny
+Black: post-QC SNPs, MAF >1% and missing data rate <1%. SNPs at which the test statistic exceeds 30 are represented by triangles. (Most current GWASs: on the -log10(p-value) scale with no confidence band but with a main diagonal line.)   
+Blue: excluding SNPs located in the regions of association listed in Table 3 ($< 5\cdot 10^{-7}$) (for BD: no visible effect on the plot, and for HT: no such SNPs).
+
+## \footnotesize  Manhattan plot, Figure 4 of WTCCC 2007
+![](https://utstat.toronto.edu/sun/art/fig-wtccc-fig4.png){height=90%}  
+
+## \footnotesize  A refresher $Y$-on-$G$ association test  via simulation 
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+set.seed(101) 
+
+nsample=1000; maf=0.2; beta=0.3; beta.0=0; sigma=1 # no E for simplicity
+nG=rmultinom(1,size=nsample,prob=c((1-maf)^2,2*maf*(1-maf), maf^2)) # assume HWE
+G=c(rep(0,nG[1]),rep(1,nG[2]),rep(2,nG[3]))
+e=rnorm(nsample,mean=0,sd=sigma)
+Y=beta.0+beta*G+e
+
+boxplot(Y~G,main=paste("Y = ",beta.0, "+ ",beta,"*G + e",sep=""), ylab="Phenotype (Y)", xlab="Genotype (G)")
+stripchart(Y~G,vertical=T,method="jitter",add=T,pch=20,col="gray")
+title(line=0.5,paste("n=",nsample,", MAF=",maf,", sigma=",sigma, sep=""),cex.main=0.9)
+```
+  
+## \footnotesize The true (solid) and fitted (dotted) regression lines
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+plot(G,Y,main=paste("Y = ",beta.0, "+ ",beta,"*G + e",sep=""), ylab="Phenotype (Y)", xlab="Genotype (G)", xlim=c(-.5,2.5))
+title(line=0.5,paste("n=",nsample,", MAF=",maf,", sigma=",sigma, sep=""),cex.main=0.9)
+fit=lm(Y~G)
+abline(a=fit$coef[1],b=fit$coef[2],lty=2) # fitted regression (dotted) line
+abline(a=beta.0,b=beta) # true regression (solid) line
+fit$coef
+```
+
+## \footnotesize Quiz: \small difference between the same Y=0+0.3*G+e regression? 
+\tiny
+```{r,echo=FALSE,out.width = '100%',fig.align = "center"}
+set.seed(101)
+par(mfrow=c(2,2))
+
+# temp.function
+temp.function.plot=function(seed,nsample,maf,beta, beta.0, sigma) 
+{
+  nG=rmultinom(1,size=nsample,prob=c((1-maf)^2,2*maf*(1-maf), maf^2)) 
+  G=c(rep(0,nG[1]),rep(1,nG[2]),rep(2,nG[3]))
+  e=rnorm(nsample,mean=0,sd=sigma)
+  Y=beta.0+beta*G+e
+  fit=lm(Y~G)
+  plot(G,Y,main=paste("Y = ",beta.0, "+ ",beta,"*G + e",sep=""), ylab="", xlab=paste("beta.0.hat=",round(fit$coef[1],2), "(",round(summary(fit)$coefficients[1,2],2), ")", ", beta.hat=", round(fit$coef[2],2), "(",round(summary(fit)$coefficients[2,2],2), ")", sep=""),xlim=c(-.5,2.5))
+  title(line=0.5,paste("n=",nsample,", MAF=",maf,", sigma=",sigma, sep=""),cex.main=0.9)
+  abline(a=fit$coef[1],b=fit$coef[2],lty=2) # fitted regression (dotted) line
+  abline(a=beta.0,b=beta) # true regression (solid) line
+} 
+
+# the reference plot
+temp.function.plot(nsample=1000, maf=0.2, beta=0.3, beta.0=0, sigma=1)
+# reduce the sample size from 1000 to 100
+temp.function.plot(nsample=100,maf=0.2, beta=0.3, beta.0=0, sigma=1)
+# reduce the MAF from 0.2 to 0.05
+temp.function.plot(nsample=1000,maf=0.05, beta=0.3, beta.0=0, sigma=1)
+# increase the sigma for the error term from 1 to 5
+temp.function.plot(nsample=1000, maf=0.2, beta=0.3, beta.0=0, sigma=5)
+```
+
+
+## \footnotesize  What if $Y$ is binary for a case-control study?  
+
+\footnotesize
+A continuous trait: $E(Y)=\beta_0+\beta_j G_j$  (no $E$ for notation simplicity)    
+\vspace{8pt}
+A binary trait: $E(Y)=1\cdot\text{Prob}(Y=1)+0\cdot \text{Prob}(Y=0)=\text{Prob}(Y=1)$   
+\vspace{8pt}
+
+**Instead of studying $E(Y)=\text{Prob}(Y=1)$ directly, use a `smart' transformation, $g(E(Y))$,**   
+$$logit(E(Y))=logit(\text{Prob}(Y=1))=log(\frac{\text{Prob}(Y=1)}{1-\text{Prob}(Y=1)}) \in (-\infty, \infty)$$  
+\vspace{6pt}
+
+**Logistic regression, a generalized linear model (GLM)**, 
+$$g(E(Y))=logit(E(Y))=log(\frac{\text{Prob}(Y=1)}{1-\text{Prob}(Y=1)})=\beta_0+\beta_j G_j$$    
+\vspace{6pt}
+
+Interpretation: **$\beta$ is the logOR** and   
+$$\text{Prob}(Y=1)=\frac{exp(\beta_0+\beta_j G_j)}{1+exp(\beta_0+\beta_j G_j)}$$  
+  
+## Binary trait simulation study (not discussed here)  
+\vspace{2cm}
+
+\centerline{\bf NOT easy!}
+\vspace{2.5cm}
+
+\small
+We can use **a liability/threshold model** to create cases and controls from a continuous outcome, similar to a population-based case-control study using e.g. the UK Biobank data.
+
+## Can we talk about $PRS_i=\sum_{j=1}^{J} \hat \beta_j G_{ij}$ now?    \hspace{2cm} NOT yet: \color{red}{A deeper understanding of GWAS is needed!}   
+
+**Even determining $J$, the `top' associated/ranked SNPs, is not that simple!** Several complications:  
+\vspace{12pt}  
+
+\begin{itemize}
+\item multiple hypothesis testing (mht; here)   
+\item weak-moderate genetic effect size (low power; next)  
+\item correlated tests (LD) (`power'?; a bit at the end)
+\small
+\item[] (many complex and interesting Qs, e.g. consider LD prior or post GWAS?)
+\item ...
+\end{itemize}
+
+## mht: from $\alpha=0.05$ to $5\times 10^{-8}$, the genome-wide (GW) significance level
+\small
+Dudbridge and Gusnanto (2008). *Genetic Epidemiology*.  [Estimation of significance thresholds for genomewide association scans](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2573032/).    
+$$g(E(Y))=\beta_0+\beta_j G_j; \:\:\: H_0:\beta_j=0\:\text{ for } j=1,\ldots\approx 10^6 \text{ SNPs}.$$    
+  
+- **$\alpha=0.05$: many `significant' SNPs per GWAS/family of tests**.  
+- If all SNPs are not associated, p-values are Unif(0,1) distributed.  
+  
+- **$\alpha=5\times 10^{-8}$: family/GWAS-wise error rate (FWER) of 0.05**,
+$$\text{Prob(at least one false positive SNP per GWAS)}\leq 0.05.$$
+
+## An illustrative simulation study: no SNPs associated
+\footnotesize
+**Using $\alpha=0.05$ leads to 256 significant SNPs (all false positives) in this one single `GWAS.null'! \hspace{0.1cm} No significant findings at $\alpha=0.05/5000$**  
+
+\tiny
+```{r,echo=TRUE}
+set.seed(101) 
+nsample=1000; nsnp=5000 # less than 10^6 and no LD for now
+G=matrix(-9,nrow = nsample,ncol = nsnp) # the genotype matrix
+maf=runif(nsnp,min=0.05,max=0.5) # MAF randomly drawn from Unif(0,05,0.5) for simplicity
+maf.hat=rep(-9,nsnp) 
+nsnp.true=0 # number of truly associated SNPs
+beta.true=0 # no effect to study type 1 error
+beta=c(rep(beta.true,nsnp.true),rep(0,(nsnp-nsnp.true))) # beta vector
+betaG=rep(0,nsample) # the initial beta*G vector  
+for(j in 1:nsnp){ # using the loop function slows down the computation but adds clarity for teaching.
+  nG=rmultinom(1,size=nsample,prob=c((1-maf[j])^2,2*maf[j]*(1-maf[j]), maf[j]^2))
+  maf.hat[j]=(2*nG[3]+nG[2])/(2*nsample) # MAF estimated from the sample 
+  G[,j]=sample(c(rep(0,nG[1]),rep(1,nG[2]),rep(2,nG[3]))) # shuffle the G; no LD
+  betaG=betaG+beta[j]*G[,j]
+}
+beta.0=0;sigma=1;e=rnorm(nsample,mean=0,sd=sigma)
+Y=beta.0+betaG+e # the phenotype vector
+sum.stat=matrix(-9,nrow=nsnp,ncol=7)
+colnames(sum.stat)=c("MAF", "MAF.hat", "beta", "beta.hat", "se", "Z.value", "p.value")
+for(j in 1:nsnp){
+  fit=lm(Y~G[,j]); sum.stat[j,]=c(maf[j],maf.hat[j], beta[j], summary(fit)$coefficients[2,])
+}
+sum(sum.stat[,"p.value"]<=0.05) # many "significant" SNPs in this one single "GWAS"
+sum(sum.stat[,"p.value"]<=0.05/nsnp) # using the Bonferroni correction for FWER of 0.05
+```
+
+##
+**Pay attention to the spread of $\hat \beta_j$ histogram (top-left plot)**   
+\color{red}No association here, true $\beta_j=0$ for all SNPs.   
+\vspace{12pt}
+
+\tiny
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+par(mfrow=c(2,2))
+hist(sum.stat[,"beta.hat"],freq=F)
+# use sample estimate but this is not strictly correct as 
+# variance of beta.hat depends on n, sigma and MAF: sigma^2/(n*var(G))
+# and MAFs for the simulated SNPs vary.
+curve(dnorm(x,mean=0, sd=(sqrt(var(sum.stat[,"beta.hat"])))), add=T,lwd=2,col="blue")
+hist(sum.stat[,"Z.value"],freq=F)
+curve(dnorm(x,mean=0, sd=1), add=T,lwd=2,col="blue")
+hist(sum.stat[,"p.value"],freq=F)
+abline(h=1,col="blue")
+plot(-log10((seq(1,nsnp,1)-0.5)/nsnp), -log10(sort(sum.stat[,"p.value"])),ylab="-log(p-value) Obs", xlab="-log(p-value) Exp",main="QQ-plot of p-value")
+abline(0,1,lwd=2,col="blue")
+
+sum.stat.null=sum.stat # save it for later comparison
+```
+
+## \footnotesize  Also pay attention to the uncertainty in MAF estimates
+\vspace{6pt}
+
+\tiny
+```{r,echo=FALSE,out.width = '95%',fig.align = "center"}
+par(mfrow=c(1,2))
+plot(maf,maf.hat,xlab="True MAF",ylab="MAF sample estimate",main="All SNPs")
+abline(0,1,col="blue")
+temp.index=which(maf<0.1)
+#hist(maf[temp.index])
+#plot(maf[temp.index],maf.hat[temp.index])
+plot(maf[temp.index],maf.hat[temp.index],xlab="True MAF < 0.1",ylab="MAF sample estimate",main="Zoom-in: SNPs with MAF<10%")
+abline(0,1,col="blue")
+```
+
+## An illustrative `polygenic' model simulation study 
+\vspace{6pt}
+
+10 out 5000 indep.\ SNPs with **varying `moderate-large' effects** are truly associated with $Y$ (**all $\beta=0.3$ but MAF vary**).       
+\small
+$$Y_i=\sum_{j=1}^{10} \beta_jG_{ij} + e, \text{ where } \beta_j=0.3$$ 
+$$\text{ MAF} \sim \text{  Unif(0.05,0.5)}, \: e\sim N(0,1).$$  
+\vspace{6pt}
+
+\scriptsize
+```{r,echo=TRUE,eval=FALSE}
+nsnp.true=10 # number of truly associated SNPs
+beta.true=0.3 # "large" effect (also MAF, the error term, and the sample size)
+```
+\vspace{6pt}
+
+```{r,echo=FALSE,out.width = '50%',fig.align = "center"}
+set.seed(101) 
+nsample=1000;nsnp=5000 
+G=matrix(-9,nrow = nsample,ncol = nsnp)
+maf=runif(nsnp,min=0.05,max=0.5)
+maf.hat=rep(-9,nsnp)
+nsnp.true=10; beta.true=0.3 # +-sign later
+beta=c(rep(beta.true,nsnp.true),rep(0,(nsnp-nsnp.true)))
+betaG=rep(0,nsample)
+for(j in 1:nsnp){ 
+  nG=rmultinom(1,size=nsample,prob=c((1-maf[j])^2,2*maf[j]*(1-maf[j]), maf[j]^2))
+  maf.hat[j]=(2*nG[3]+nG[2])/(2*nsample)
+  G[,j]=sample(c(rep(0,nG[1]),rep(1,nG[2]),rep(2,nG[3]))) # shuffle the G; no LD
+  betaG=betaG+beta[j]*G[,j]
+}
+beta.0=0;sigma=1;e=rnorm(nsample,mean=0,sd=sigma) 
+Y=beta.0+betaG+e
+
+sum.stat=matrix(-9,nrow=nsnp,ncol=7)
+colnames(sum.stat)=c("MAF", "MAF.hat", "beta", "beta.hat", "se", "Z.value", "p.value")
+for(j in 1:nsnp){
+  fit=lm(Y~G[,j])
+  sum.stat[j,]=c(maf[j],maf.hat[j],beta[j],summary(fit)$coefficients[2,])
+}
+hist(Y,freq=F)
+curve(dnorm(x,mean=mean(Y), sd=sqrt(var(Y))), add=T,lwd=2,col="blue")
+```
+
+## 
+```{r,echo=FALSE,out.width = '95%',fig.align = "center"}
+par(mfrow=c(2,2))
+hist(sum.stat[,"beta.hat"],freq=F)
+curve(dnorm(x,mean=0, sd=(sqrt(var(sum.stat[,"beta.hat"])))), add=T,lwd=2,col="blue")
+hist(sum.stat[,"Z.value"],freq=F)
+curve(dnorm(x,mean=0, sd=1), add=T,lwd=2,col="blue")
+hist(sum.stat[,"p.value"],freq=F)
+abline(h=1,col="blue")
+plot(-log10((seq(1,nsnp,1)-0.5)/nsnp), -log10(sort(sum.stat[,"p.value"])),ylab="-log(p-value) Obs", xlab="-log(p-value) Exp",main="QQ-plot of p-value")
+abline(0,1,lwd=2,col="blue")
+```
+
+\vspace{12pt}
+\scriptsize \bf N.B. Histogram and QQ-plot carry different types of information!
+
+## A closer look at the histograms of $\hat \beta$ and $Z=\hat \beta/SE$  
+
+\small \bf Trouble ahead: similar between the GWAS.PRS (top) and GWAS.null (bottom)
+\vspace{12pt}
+
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+par(mfrow=c(2,2))
+hist(sum.stat[,"beta.hat"],freq=T,main="GWAS.PRS, the polygenic model",xlim=c(-0.4,0.4),xlab="beta.hat",nclass=20)
+hist(sum.stat[,"Z.value"],freq=T,main="GWAS.PRS, the polygenic model",xlim=c(-4,6),xlab="Z.value",nclass=20)
+hist(sum.stat.null[,"beta.hat"],freq=T,main="GWAS.null, the GWAS with no associated SNPs",xlim=c(-0.4,0.4),xlab="beta.hat",nclass=20)
+hist(sum.stat.null[,"Z.value"],freq=T,main="GWAS.null, the GWAS with no associated SNPs",xlim=c(-4,6),xlab="Z.value",nclass=20)
+```
+
+## GWAS-type of summary statistics 
+\tiny
+```{r,echo=FALSE}
+sum.stat[1:30,]
+```
+
+## \footnotesize  SNP1 output
+\scriptsize 
+```{r,echo=FALSE,out.width = '80%',fig.align = "center"}
+# SNP1 
+summary(lm(Y~G[,1]))
+```
+
+## \footnotesize  SNP2 output
+\scriptsize
+```{r,echo=FALSE,out.width = '80%',fig.align = "center"}
+# SNP1 
+summary(lm(Y~G[,2]))
+```
+
+## IF we knew which set of SNPs to include (getting into the PRS direction but not yet) 
+
+\tiny  
+```{r,echo=TRUE,out.width = '80%',fig.align = "center"}
+# not realistic: no GWAS needed if we already know which SNPs are associated!
+summary(lm(Y~G[,1]+G[,2]+G[,3]+G[,4]+G[,5]+G[,6]+G[,7]+G[,8]+G[,9]+G[,10]))
+```
+
+## What kind of model (heritability, $h^2$) did we simulate?  
+\footnotesize
+$$Y=\sum_{j=1}^{10} \beta_jG_{j} + e, \text{ where } \beta_j=0.3, \: e\sim N(0,\sigma^2=1),$$  
+**The MAF of the 10 truly associated SNPs**, ranging from 0.07 to 0.37: 
+```{r,echo=TRUE}
+round(maf[1:nsnp.true],2)
+```
+\vspace{12pt}  
+
+\normalsize
+**True (not estimated) heritability:** 
+$${h^2} =\frac{V_G}{V_G+V_e}=\frac{0.321}{0.321+1}=24.3\%$$  
+\vspace{6pt} 
+\footnotesize
+```{r,echo=TRUE}
+V.G=sum(beta[1:nsnp.true]^2*(2*maf[1:nsnp.true]*(1-maf[1:nsnp.true])))
+V.e=sigma^2
+h2=V.G/(V.G+V.e)
+round(c(V.G,V.e,h2),3)
+```
+
+
+## Analytical details for $h^2$ of this **simple** model  
+(linear, fixed-effect, additive, no LD, no interaction)  
+\vspace{6pt}
+
+\small 
+$$Y=\sum_{j=1} \beta_jG_{j} + e, \text{ where } \: e\sim N(0,\sigma^2).$$  
+\normalsize
+$$V_Y=Var(Y)=\sum_j \beta_j^2 Var(G_j) + \sigma^2=V_G+V_e,$$
+\footnotesize
+\begin{itemize}
+\item $G_j$: $p_j$ as MAF for $A$
+\item coded additively: $0=aa$, $1=Aa$ and $2=AA$
+\item genotype frequency under HWE: $(1-p_j)^2$, $2p_j(1-p_j)$ and $p_j^2$ 
+\item $E(G_j)=2p_j$; $Var(G_j)=2p_j(1-p_j)$  
+\end{itemize}
+\normalsize
+$$\text{(narrow) } h^2=\frac{V_G}{V_G+V_e}=\frac{\sum_j \beta_j^2 Var(G_j)}{Var(Y)}=\frac{\color{red}{\sum_j \beta_j^2 2p_j(1-p_j)}}{\sum_j \beta_j^2 2p_j(1-p_j)+\sigma^2}.$$  
+
+## Heritability of GWAS `loci', $h_j^2$ contributed by each individual, independent SNP $j$ in our case
+
+$$\text{(narrow) } h_{j}^2=\frac{\color{red}{\beta_j^2 2p_j(1-p_j)}}{\sum_j \beta_j^2 2p_j(1-p_j)+\sigma^2}.$$  
+\vspace{24pt}  
+
+**$\beta_j=0.3$ for all 10 causal SNPs but MAFs differ:**
+\scriptsize
+```{r,echo=FALSE}
+round(maf[1:nsnp.true],3) # beta=0.3 for all SNPs but maf differ
+```
+\vspace{12pt}  
+
+\normalsize
+**Thus, (true not estimated) SNP $h_j^2$'s differ:**
+\scriptsize
+```{r,echo=FALSE}
+V.G.loci=beta[1:nsnp.true]^2*(2*maf[1:nsnp.true]*(1-maf[1:nsnp.true]))
+V.G=sum(beta[1:nsnp.true]^2*maf[1:nsnp.true])
+V.e=sigma^2 
+h2.loci=V.G.loci/(V.G+V.e)
+round(h2.loci,3) # h2 contributed by each individual SNP
+```
+
+## Worth repeating: What is the effect size of a SNP?  
+
+**All 10 SNPs have $\beta=0.3$, but their (true not estimated) $h^2$ contributions vary**
+\begin{itemize}
+\item[] from 1\% (MAF=0.07, SNP2) 
+\item[] to \hspace{7pt}  3.4\% (MAF=0.37, SNP3)
+\end{itemize}
+\vspace{8pt}
+
+${\color{red}{\sum_j \beta_j^2 2p_j(1-p_j)}}$
+\begin{itemize}
+\item[] {\bf Effect interpretation depends on MAF (and also $\sigma^2$}).
+\item[] $n$ comes in later when we try to find these SNPs using data. 
+\end{itemize}
+\vspace{8pt}
+
+**In practice, $\beta_j$ must be estimated and **
+\begin{itemize}
+\item[] Large $n$ is then critical! 
+\item[] MAF $p_j$ and $\sigma^2$ also need to be estimated.
+\end{itemize}
+
+
+## \footnotesize Connection with Explained Variatation (EV) and $R^2$ from regression  
+(linear, fixed-effect, additive, no LD, no interaction)  
+\small
+$$Y=\sum_{j=1} \beta_jG_{j} + e, \text{ where } \: e\sim N(0,\sigma^2).$$ 
+\vspace{12pt}
+$$
+\begin{aligned}
+EV&=\frac{\text{variation of Y explained by G}}{\text{total variation of Y}}=\frac{Var(E(Y|G))}{Var(Y)}\\
+&=\frac{\sum_j \beta_j^2 2p_j(1-p_j)}{\sum_j \beta_j^2 2p_j(1-p_j)+\sigma^2}=h^2.
+\end{aligned}
+$$
+\vspace{18pt}
+$$
+\begin{aligned}
+R^2&=\frac{SS_{explained}}{SS_{total}}=1-\frac{SS_{residual}}{SS_{total}}\\
+&=1-\frac{\sum_i (y_i-\hat y_i)^2}{\sum_i (y_i-\bar y)^2} \approx h^2
+\end{aligned}
+$$
+
+## Recall: multi-SNP regression **IF** we knew the true model 
+\tiny  
+```{r,echo=FALSE,out.width = '80%',fig.align = "center"}
+# not realistic: why GWAS if we already know which SNPs are associated
+summary(lm(Y~G[,1]+G[,2]+G[,3]+G[,4]+G[,5]+G[,6]+G[,7]+G[,8]+G[,9]+G[,10]))
+```
+
+\normalsize
+**\color{red}From multi-SNP to one-super-SNP (PRS) association!**
+
+## **IF** we knew the true model, we can construct $PRS_{oracle}$
+**Not realistic**: only to demonstrate the value of PRS **conceptually**.  
+\small
+$$PRS_{i,oracle}=\sum_{j=1}^{J=10} \beta_jG_{ij} + e, \text{ where } \beta_j=0.3$$  
+\tiny
+```{r,echo=TRUE,out.width = '55%',fig.align = "center"}
+PRS.oracle=rep(0,nsample)  # the PRS vector
+for (i in 1:nsample) # for each individual i
+  for (j in 1:nsnp.true) # sum over the J selected SNPs 
+    PRS.oracle[i] = PRS.oracle[i]+beta[j]*G[i,j] 
+par(mfrow=c(1,2))
+hist(PRS.oracle) # not quite normal as J=10 here
+plot(PRS.oracle,Y) # much more predictive than individual SNPs
+```
+
+## (Good) PRS is more significantly associated with the trait than one single SNP
+\tiny
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+par(mfrow=c(2,2))
+plot(PRS.oracle,Y,main=paste("PRS.oracle"));abline(a=lm(Y~PRS.oracle)$coef[1],b=lm(Y~PRS.oracle)$coef[2],lty=2)
+j=1
+plot(G[,j],Y,main=paste("SNP 1, MAF=",round(sum.stat[j,"MAF"],2), sep=""),xlab="G of SNP1")
+fit=lm(Y~G[,j]); abline(a=fit$coef[1],b=fit$coef[2],lty=2)
+j=2
+plot(G[,j],Y,main=paste("SNP 2, MAF=",round(sum.stat[j,"MAF"],2), sep=""),xlab="G of SNP2")
+fit=lm(Y~G[,j]); abline(a=fit$coef[1],b=fit$coef[2],lty=2)
+j=3
+plot(G[,j],Y,main=paste("SNP 3, MAF=",round(sum.stat[j,"MAF"],2), sep=""),xlab="G of SNP3")
+fit=lm(Y~G[,j]); abline(a=fit$coef[1],b=fit$coef[2],lty=2)
+```
+
+##  
+\tiny  
+```{r,echo=TRUE,out.width = '80%',fig.align = "center"}
+summary(lm(Y~PRS.oracle))
+```
+\vspace{12pt}
+
+\normalsize
+**\color{red}From PRS-based association to PRS-based prediction!**
+
+## Standardization (STD) and a liability/threashold model
+\tiny
+```{r,echo=TRUE,out.width = '100%',fig.align = "center"}
+Y.STD=(Y-mean(Y))/sqrt(var(Y))
+PRS.oracle.STD=(PRS.oracle-mean(PRS.oracle))/sqrt(var(PRS.oracle))
+case.index=which(Y.STD>1);control.index=which(Y.STD<=1) # 1 is a subjective choice
+c(length(Y[case.index]),length(Y[control.index])) # numbers of cases and controls
+```
+
+\tiny
+```{r,echo=FALSE,out.width = '75%',fig.align = "center"}
+par(mfrow=c(1,3))
+color.index=rep("black",nsample);color.index[case.index]="red" 
+plot(PRS.oracle,Y,col=color.index)
+abline(h=(1*sqrt(var(Y))+mean(Y)),col="grey")
+abline(v=(sqrt(var(PRS.oracle))+mean(PRS.oracle)),col="blue")
+plot(PRS.oracle.STD,Y,col=color.index)
+abline(h=(1*sqrt(var(Y))+mean(Y)),col="grey")
+abline(v=1,col="blue") 
+plot(PRS.oracle.STD,Y.STD,col=color.index)
+abline(h=1,col="grey")
+abline(v=1,col="blue")
+```
+\vspace{6pt}
+
+\small
+\centerline{\bf higher $PRS_{oracle}$ $\Longrightarrow$ higher risk (proportionally more case)}   
+
+## \footnotesize Quiz 
+
+Standardization (STD) is often done in practice and should not change interpretation.
+
+BUT, what are the potential pitfalls of STD?  
+
+## Different perspective but the same idea: $PRS_{oracle}$'s of cases tend to be higher than $PRS_{orcale}$'s of controls
+\tiny
+```{r,echo=TRUE,out.width='90%',fig.align = "center"}
+Y.cc=rep("0=Control",nsample); Y.cc[case.index]="1=Case"
+boxplot(PRS.oracle.STD~Y.cc,main="",xlab="",col=c(rgb(0,0,0,0.1),rgb(1,0,0,0.1))) 
+```
+
+## Recall and mimic the illustrative plots (2 in 1)
+![](https://utstat.toronto.edu/sun/art/fig-Wand-PRS_Illustration.png){width=50%}   
+\vspace{12pt}
+
+\tiny
+```{r,echo=FALSE,out.width = '65%',fig.align = "center"}
+hist(PRS.oracle.STD[control.index],col=rgb(0,0,0,0.1),freq=F,breaks=7,xlim=c(-4,4),main="",xlab="")
+curve(dnorm(x,mean=mean(PRS.oracle.STD[control.index]), sd=sqrt(var(PRS.oracle.STD[control.index]))), add=T,lwd=2,col="black")
+title(main="Risk Score Distribution, stratified by control (black) and case (red)",xlab="Standardized PRS.oracle",cex.main=1.5) 
+title(main="Higher PRS score group contains (predicts) higher case% (higher risk)",line=0.5,cex.main=1.5)
+hist(PRS.oracle.STD[case.index],col=rgb(1,0,0,0.1),breaks=7,freq=F,add=T)
+curve(dnorm(x,mean=mean(PRS.oracle.STD[case.index]), sd=sqrt(var(PRS.oracle.STD[case.index]))),add=T,lwd=2,col="red")
+```
+
+## \footnotesize Quiz:  
+The standardized PRS.oracle value of an individual is 2.5. What is the **probability** of this individual having the disease/condition?  \small (Hint in the two histrograms below and **relative risk $\neq$ absolute risk!**)  
+\vspace{12pt}
+
+\tiny
+```{r,echo=FALSE,out.width = '80%',fig.align = "center"}
+par(mfrow=c(1,2))
+hist(PRS.oracle.STD[control.index],col=rgb(0,0,0,0.1),breaks=7,freq=F,xlim=c(-4,4),main="",xlab="Standardized PRS.oracle")
+curve(dnorm(x,mean=mean(PRS.oracle.STD[control.index]), sd=sqrt(var(PRS.oracle.STD[control.index]))), add=T,lwd=2,col="black")
+hist(PRS.oracle.STD[case.index],col=rgb(1,0,0,0.1),breaks=7,freq=F,add=T)
+curve(dnorm(x,mean=mean(PRS.oracle.STD[case.index]), sd=sqrt(var(PRS.oracle.STD[case.index]))),add=T,lwd=2,col="red")
+
+hist(PRS.oracle.STD[control.index],col=rgb(0,0,0,0.1),breaks=7,freq=T,xlim=c(-4,4),main="",xlab="Standardized PRS.oracle")
+hist(PRS.oracle.STD[case.index],col=rgb(1,0,0,0.1),breaks=7,freq=T,add=T)
+```
+
+
+## \footnotesize Another related quiz:
+\begin{itemize}
+\item cases: individuals with the disease/condition  
+\item controls: individuals without the disease/condition  
+\item a test or a decision rule, say Covid-19 testing or PRS-based prediction (e.g. standardized PRS >3 predicting case) 
+\item Sensitivity = e.g.\ 90\% 
+\centerline{Sensitivity = Pr(positive test result|case)}
+\item Specificity = e.g.\ 90\% 
+\centerline{Specificity = Pr(negative test result|control)}
+\end{itemize}
+\vspace{12pt}
+
+**Is it possible that** Pr(case|PRS>3) < 50\%?  
+(hint: which information is missing from the above?)
+
+## Towards ROC (receiver operating characteristic) curve and AUC (area under the curve), using our simulated data and PRS.oracle
+```{r,echo=FALSE,out.width = '80%',fig.align = "center"}
+ncase=sum(Y.cc=="1=Case") # total number of cases
+ncontrol=sum(Y.cc=="0=Control") # total number of controls
+a=seq(4,-2.5,by=-0.5)
+P=rep(-9,length(a));TP=rep(-9,length(a));FP=rep(-9,length(a))
+sensitivity=rep(-9,length(a));specificity.1=rep(-9,length(a))
+for (k in 1:length(a)) {
+ PRS.threshold=a[k]
+ P[k]=sum(PRS.oracle.STD>PRS.threshold) # number of Positives at this threshold
+ TP[k]=sum(Y.cc[PRS.oracle.STD>PRS.threshold]=="1=Case") # True Positives
+ FP[k]=sum(Y.cc[PRS.oracle.STD>PRS.threshold]=="0=Control") # False Positives
+ sensitivity[k]=TP[k]/ncase # sensitivity, estimated by TP/ncase
+ specificity.1[k]=FP[k]/ncontrol # 1-specificity, estimated by FP/ncontrol
+}
+plot(specificity.1,sensitivity,type="b",pch=20,col="blue",xlab="1 - Specificity = FP/ncontrols",ylab="Sensitivity = TP/ncases")
+abline(0,1)
+auc=0  
+for (k in 2:length(a)) # Trapezoid's method height*(base1+base2)/2
+  auc = auc + (sensitivity[k]+sensitivity[k-1])/2*(specificity.1[k]-specificity.1[k-1])
+c("AUC of ROC.oracle=",round(auc,3))
+```
+
+## Undertanding each point on the ROC curve
+\tiny
+```{r,echo=TRUE,out.width = '40%',fig.align = "center"}
+plot(PRS.oracle.STD,Y.STD,col=color.index)
+ncase=sum(Y.cc=="1=Case") # total number of cases
+ncontrol=sum(Y.cc=="0=Control") # total number of controls
+c(ncase,ncontrol)
+PRS.threshold=1;abline(v=PRS.threshold,col="blue")  # threshold used to call a sample positive/case
+P=sum(PRS.oracle.STD>PRS.threshold) # number of Positives at this threshold
+TP=sum(Y.cc[PRS.oracle.STD>PRS.threshold]=="1=Case") # True Positives
+FP=sum(Y.cc[PRS.oracle.STD>PRS.threshold]=="0=Control") # False Positives
+c(P,TP,FP)
+sensitivity=TP/ncase # sensitivity
+specificity.1=FP/ncontrol # 1-specificity 
+c(sensitivity,specificity.1) # ONE point on the ROC curve: (y=sensitivity=0.47,x=1-specificity=0.16)
+```
+
+## A few more (sensitivity vs. 1-specificity) points for ROC 
+\tiny
+
+```{r,echo=TRUE,out.width = '40%',fig.align = "center"}
+# increase the threshold: both sensitivity and 1-specificity decrease
+PRS.threshold= -1.5
+```
+```{r,echo=FALSE,out.width = '40%',fig.align = "center"}
+P=sum(PRS.oracle.STD>PRS.threshold) # number of Positives at this threshold
+TP=sum(Y.cc[PRS.oracle.STD>PRS.threshold]=="1=Case") # True Positives
+FP=sum(Y.cc[PRS.oracle.STD>PRS.threshold]=="0=Control") # False Positives
+c(P,TP,FP)
+sensitivity=TP/ncase # sensitivity
+specificity.1=FP/ncontrol # 1-specificity 
+c(sensitivity,specificity.1) # ONE point on the ROC curve
+```
+\vspace{6pt}
+
+```{r,echo=TRUE,out.width = '40%',fig.align = "center"}
+PRS.threshold=0
+```
+```{r,echo=FALSE,out.width = '40%',fig.align = "center"}
+P=sum(PRS.oracle.STD>PRS.threshold) # number of Positives at this threshold
+TP=sum(Y.cc[PRS.oracle.STD>PRS.threshold]=="1=Case") # True Positives
+FP=sum(Y.cc[PRS.oracle.STD>PRS.threshold]=="0=Control") # False Positives
+c(P,TP,FP)
+sensitivity=TP/ncase # sensitivity
+specificity.1=FP/ncontrol # 1-specificity 
+c(sensitivity,specificity.1) # ONE point on the ROC curve
+```
+\vspace{6pt}
+
+```{r,echo=TRUE,out.width = '40%',fig.align = "center"}
+PRS.threshold=1.5
+```
+```{r,echo=FALSE,out.width = '40%',fig.align = "center"}
+P=sum(PRS.oracle.STD>PRS.threshold) # number of Positives at this threshold
+TP=sum(Y.cc[PRS.oracle.STD>PRS.threshold]=="1=Case") # True Positives
+FP=sum(Y.cc[PRS.oracle.STD>PRS.threshold]=="0=Control") # False Positives
+c(P,TP,FP)
+sensitivity=TP/ncase # sensitivity
+specificity.1=FP/ncontrol # 1-specificity 
+c(sensitivity,specificity.1) # ONE point on the ROC curve
+```
+\vspace{6pt}
+
+```{r,echo=TRUE,out.width = '40%',fig.align = "center"}
+PRS.threshold=2
+```
+```{r,echo=FALSE,out.width = '40%',fig.align = "center"}
+P=sum(PRS.oracle.STD>PRS.threshold) # number of Positives at this threshold
+TP=sum(Y.cc[PRS.oracle.STD>PRS.threshold]=="1=Case") # True Positives
+FP=sum(Y.cc[PRS.oracle.STD>PRS.threshold]=="0=Control") # False Positives
+c(P,TP,FP)
+sensitivity=TP/ncase # sensitivity
+specificity.1=FP/ncontrol # 1-specificity 
+c(sensitivity,specificity.1) # ONE point on the ROC curve
+```
+\vspace{6pt}
+
+```{r,echo=TRUE,out.width = '40%',fig.align = "center"}
+PRS.threshold=2.5  # Q: variability of these estimates?
+```
+```{r,echo=FALSE,out.width = '40%',fig.align = "center"}
+P=sum(PRS.oracle.STD>PRS.threshold) # number of Positives at this threshold
+TP=sum(Y.cc[PRS.oracle.STD>PRS.threshold]=="1=Case") # True Positives
+FP=sum(Y.cc[PRS.oracle.STD>PRS.threshold]=="0=Control") # False Positives
+c(P,TP,FP)
+sensitivity=TP/ncase # sensitivity
+specificity.1=FP/ncontrol # 1-specificity 
+c(sensitivity,specificity.1) # ONE point on the ROC curve
+```
+
+## Real-life ROC curves, e.g. 
+
+![](https://utstat.toronto.edu/sun/art/fig-Badre2021-fig3.png){width=90%} 
+
+\scriptsize
+Figure 3 of Badre et al. (2021). *Journal of Human Genetics*. [Deep neural network improves the estimation of polygenic risk scores for breast cancer.](https://www.nature.com/articles/s10038-020-00832-7)  
+\vspace{6pt}
+**N.B. The classical logistic regression is competitive!**
+
+
+## \color{red}{\bf Because}, 
+$$ {\bf PRS_{i, oracle}}=\sum_{j=1}^{J=10} \beta_j(=0.3) G_{ij}\:\: \color{red}{\bf \text{\bf is NOT } PRS_{i, parctice}!}$$  
+
+\begin{itemize}
+\item $J$ is unknown, to be determined  
+\item $\beta_j$ is unknown, to be estimated  
+\item  $G_{ij}$ {\bf cannot be directly from the same data used to infer $J$ and $\beta_j$}.  
+\item[] Otherwise: over-fitting/double-dipping/data-dredging/p-hacking/selection-bias!  
+\item Not to mention LD and other considerations in real data settings.
+\end{itemize}
+\vspace{12pt}  
+
+\centerline{\bf What's next: HOW to construct $\bf PRS_{practice}$ and do it CORRECTLY!}
+
+## Recap the goal of this lecture: a **deeper** understanding of 
+
+\begin{itemize}  
+\item the multiple hypothesis testing issue inherent in GWAS  
+\item the (high) variability inherent in $\hat \beta$, the $\beta$ estimates 
+\item heritability $h^2$ as a function of both $\beta$ and MAF (and $\sigma^2$) 
+\item  the `genetic effect size' of a SNP $= \beta^2 \cdot \mbox{MAF}\cdot(1-\mbox{MAF})$
+\vspace{6pt} 
+\item a conceptual PRS construction based on the ground truth, PRS.oracle
+\item DIY ROC plotting and AUC calculation for a PRS-based prediction 
+\end{itemize}
+\vspace{1cm}
+
+What's next: How to construct $PRS_{practice}$ and do it correctly and compare results using different $\alpha$ level.
+

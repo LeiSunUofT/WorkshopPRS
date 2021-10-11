@@ -1,0 +1,851 @@
+---
+title: Polygenic Risk Score (PRS) Introduction 301 
+subtitle: basics-plus, some obvious or not so obvious follow-up Qs  
+author: Drs. Lei Sun, Wei Deng, Yanyan Zhao
+institute:
+  - Department of Statistical Sciences, FAS  
+  - Division of Biostatistics, DLSPH  
+  - University of Toronto    
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+
+output: 
+  beamer_presentation: 
+    pandoc_args: ["--extract-media", "./extracted-image"]
+# output: word_document
+# output: html_document
+# output: pdf_document
+
+header-includes:
+ - \usepackage{fancyhdr}
+ - \usepackage{amsmath,latexsym}
+ - \hypersetup{colorlinks=true, linkcolor=blue}
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(echo = TRUE)
+# knitr::opts_chunk$set(out.width = '70%') 
+set.seed(1234) 
+library(knitr)
+library(kableExtra)
+library(plotly)
+library(fields) 
+```
+
+## At the end of this lecture, a **deeper** understanding of 
+\small
+\begin{itemize}
+\item Effects of ex.nsample and ex.beta.true on AUC: easy to answer.
+\item Answers to these Qs are less obvious: {\bf If we decrease ex.beta.true from 0.3 to 0.1 but increase ex.nsnp.true from 10 to 90},
+\item[] \hspace{6pt} $h^2$ and SNP $h^2$? 
+\item[] \hspace{6pt} AUC in general?
+\item[] \hspace{6pt} AUC between PRS.gw and PRS.01?  
+\end{itemize}
+
+## \footnotesize Recall the illustrative `polygenic' model simulation study 
+\vspace{6pt}
+
+10 out 5000 indep.\ SNPs with **varying `moderate-large' effects** are truly associated with $Y$ (**all $\beta=0.3$ but MAF vary**).  
+\small
+$$Y_i=\sum_{j=1}^{10} \beta_jG_{ij} + e, \text{ where } \beta_j=0.3$$ 
+$$\text{ MAF} \sim \text{  Unif(0.05,0.5)}, \: e\sim N(0,1).$$  
+\vspace{6pt}
+
+```{r,echo=FALSE,out.width = '50%',fig.align = "center"}
+generate.ex.sumstat=function(ex.seed,ex.nsample,ex.nsnp,ex.nsnp.true,ex.beta.true,ex.sigma) #the function assumes first ex.nsnp.true are causal and effect size all equal to ex.beta.true
+{
+  set.seed(ex.seed) 
+  ex.G=matrix(-9,nrow = ex.nsample,ncol = ex.nsnp)
+  ex.maf=runif(ex.nsnp,min=0.05,max=0.5)
+  ex.maf.hat=rep(-9,ex.nsnp)
+  ex.beta=c(rep(ex.beta.true,ex.nsnp.true),rep(0,(ex.nsnp-ex.nsnp.true)))
+  ex.betaG=rep(0,ex.nsample)
+  for(j in 1:ex.nsnp){
+    ex.nG=rmultinom(1,size=ex.nsample,prob=c((1-ex.maf[j])^2,2*ex.maf[j]*(1-ex.maf[j]), ex.maf[j]^2))
+    ex.maf.hat[j]=(2*ex.nG[3]+ex.nG[2])/(2*ex.nsample)
+    ex.G[,j]=sample(c(rep(0,ex.nG[1]),rep(1,ex.nG[2]),rep(2,ex.nG[3]))) # shuffle the G; no LD
+    ex.betaG=ex.betaG+ex.beta[j]*ex.G[,j]
+    }
+  ex.beta.0=0;ex.e=rnorm(ex.nsample,mean=0,sd=ex.sigma) 
+  ex.Y=ex.beta.0+ex.betaG+ex.e
+  
+  ex.sumstat=matrix(-9,nrow=ex.nsnp,ncol=7)
+  colnames(ex.sumstat)=c("MAF", "MAF.hat", "beta", "beta.hat", "se", "Z.value", "p.value")
+  for(j in 1:ex.nsnp){
+    ex.fit=lm(ex.Y~ex.G[,j])
+    ex.sumstat[j,]=c(ex.maf[j],ex.maf.hat[j],ex.beta[j],summary(ex.fit)$coefficients[2,])
+  }
+  
+  return(ex.sumstat)
+}
+```
+\vspace{12pt}
+
+\scriptsize
+```{r,echo=TRUE}
+# now name it clearly as the summary statistics from the external data
+ex.nsample=1000;ex.nsnp=5000;ex.nsnp.true=10;ex.beta.true=0.3;ex.sigma=1
+ex.seed=101
+ex.sumstat=generate.ex.sumstat(ex.seed,ex.nsample,ex.nsnp,ex.nsnp.true,ex.beta.true,ex.sigma)
+```
+\vspace{6pt}
+
+**Total $h^2$**
+```{r,echo=FALSE}
+V.G=sum(ex.sumstat[1:ex.nsnp.true,"beta"]^2*(2*ex.sumstat[1:ex.nsnp.true,"MAF"]*(1-ex.sumstat[1:ex.nsnp.true,"MAF"])))
+V.e=ex.sigma^2
+round(V.G/(V.G+V.e),3)
+```
+\vspace{6pt}
+
+**SNP $h^2_j$**
+```{r,echo=FALSE}
+V.G.loci=ex.sumstat[1:ex.nsnp.true,"beta"]^2*(2*ex.sumstat[1:ex.nsnp.true,"MAF"]*(1-ex.sumstat[1:ex.nsnp.true,"MAF"]))
+round(V.G.loci/(V.G+V.e),3)
+```
+
+## \footnotesize Recall the summary statistics   
+
+\tiny
+```{r,echo=TRUE}
+ex.sumstat[1:23,]
+```
+
+##  
+
+\tiny
+```{r,echo=FALSE,out.width = '95%',fig.align = "center"}
+generate.sumstat.plot=function(sumstat){
+  par(mfrow=c(2,2))
+  hist(sumstat[,"beta.hat"],freq=F)
+  curve(dnorm(x,mean=0, sd=(sqrt(var(sumstat[,"beta.hat"])))), add=T,lwd=2,col="blue")
+  hist(sumstat[,"Z.value"],freq=F)
+  curve(dnorm(x,mean=0, sd=1), add=T,lwd=2,col="blue")
+  hist(sumstat[,"p.value"],freq=F)
+  abline(h=1,col="blue")
+  plot(-log10((seq(1,ex.nsnp,1)-0.5)/ex.nsnp), -log10(sort(sumstat[,"p.value"])),ylab="-log(p-value) Obs", xlab="-log(p-value) Exp",main="QQ-plot of p-value")
+  abline(0,1,lwd=2,col="blue")
+}
+```
+
+```{r,echo=TRUE,out.width = '95%',fig.align = "center"}
+generate.sumstat.plot(ex.sumstat)
+```
+
+## \footnotesize Recall effect size estimates in $PRS_i=\sum_{j=1}^{J} \hat \beta_j G_{ij}$: \color{red}$\hat \beta_j$ 
+
+\small
+**Genome-wide significance level** 
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+J.index=which(ex.sumstat[,"p.value"]<=0.05/ex.nsnp); length(J.index)
+round(ex.sumstat[J.index,"beta.hat"],2)
+```
+\vspace{3pt}  
+  
+\small
+**A less stringent significance level at 0.01**  
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+J.index=which(ex.sumstat[,"p.value"]<=0.01); length(J.index)
+round(ex.sumstat[J.index,"beta.hat"],2)
+```
+\vspace{3pt}  
+
+\small
+**\color{red}{Now also add 0.1}** 
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+J.index=which(ex.sumstat[,"p.value"]<=0.1); length(J.index)
+```
+
+## \footnotesize Recall my.data WITHOUT any heterogeneity  
+
+\tiny
+```{r,echo=FALSE,out.width = '70%',fig.align = "center"}
+generate.my.data=function(my.seed,my.nsample,my.nsnp,my.nsnp.true,my.beta.true,my.sigma,my.maf) # the function assumes my.nsnp=ex.nsp & the first my.nsnp.true are causal and with the same effect size of my.beta.true
+{
+  set.seed(my.seed) 
+  my.data=list()
+  
+  my.beta=c(rep(my.beta.true,my.nsnp.true),rep(0,(my.nsnp-my.nsnp.true))) 
+  my.maf.hat=rep(-9,my.nsnp) 
+  my.G=matrix(-9,nrow = my.nsample,ncol = my.nsnp)
+  my.betaG=rep(0,my.nsample)
+  
+  for(j in 1:my.nsnp){
+    my.nG=rmultinom(1,size=my.nsample,prob=c((1-my.maf[j])^2,2*my.maf[j]*(1-my.maf[j]), my.maf[j]^2))
+    my.maf.hat[j]=(2*my.nG[3]+my.nG[2])/(2*my.nsample) 
+    my.G[,j]=sample(c(rep(0,my.nG[1]),rep(1,my.nG[2]),rep(2,my.nG[3]))) 
+    my.betaG=my.betaG+my.beta[j]*my.G[,j]
+    }
+  my.beta.0=0;my.e=rnorm(my.nsample,mean=0,sd=my.sigma)
+  my.Y=my.beta.0+my.betaG+my.e # the phenotype vector
+
+  my.sumstat=matrix(-9,nrow=my.nsnp,ncol=7)
+  colnames(my.sumstat)=c("MAF", "MAF.hat", "beta", "beta.hat", "se", "Z.value", "p.value")
+  for(j in 1:my.nsnp){
+    my.fit=lm(my.Y~my.G[,j])
+    my.sumstat[j,]=c(my.maf[j],my.maf.hat[j],my.beta[j],summary(my.fit)$coefficients[2,])
+  }
+  
+  my.data$my.G=my.G
+  my.data$my.Y=my.Y
+  my.data$my.Y.STD=(my.Y-mean(my.Y))/sqrt(var(my.Y))
+  my.data$my.sumstat=my.sumstat
+  return(my.data)
+}
+```
+
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+# no heterogeneity, i.e. same model with the same MAF but a new seed
+my.nsnp.true=10; my.beta.true=0.3; my.maf=ex.sumstat[,"MAF"] 
+my.nsample=1000; my.nsnp=5000; my.sigma=1
+
+my.seed=102
+
+my.data=generate.my.data(my.seed,my.nsample,my.nsnp,my.nsnp.true,my.beta.true,my.sigma,my.maf)
+my.data$my.sumstat[1:15,]
+```
+
+## \footnotesize Recall the different \color{red}$PRS_i=\sum_{j=1}^{J} \hat \beta_j G_{ij}$  
+\small
+**Using the GW threshold on the external data**  
+$$my.PRS_{GW}=\sum_{j=1}^{6} \hat \beta_j^{external}\times G_{ij}^{my.data}$$ 
+\vspace{6pt}
+
+**Using $\alpha=0.01$ (and also add $\alpha=0.1$) on the external data**  
+$$my.PRS_{.01} \text{ (or } my.PRS_{.1} \text{) }=\sum_{j=1}^{66 \text{ (or } 492 \text{) }} \hat \beta_j^{external}\times G_{ij}^{my.data}$$
+\vspace{6pt}
+
+**The oracle one** (benchmarking the upper bound)
+$$my.PRS_{oracle}=\sum_{j=1}^{10} 0.3 \times G_{ij}^{my.data}$$
+\vspace{6pt} 
+\scriptsize
+($my.PRS.01.null$ omitted now; its expected AUC is 50%, the lower bound)
+
+\tiny
+```{r,echo=FALSE,out.width = '50%',fig.align = "center"}
+generate.my.PRS.output=function(ex.sumstat,my.data,alpha.level,l.threshold)
+{
+  my.PRS.output=list()
+  
+  my.G=my.data$my.G
+  my.Y.STD=my.data$my.Y.STD
+  my.sumstat=my.data$my.sumstat
+
+  # add  the oracle one as well
+  my.PRS.oracle=rep(0,my.nsample)
+  for (i in 1:my.nsample) 
+    for (j in 1:my.nsnp.true) # using all the causal SNPs and using the true effect size from my data
+      my.PRS.oracle[i]=my.PRS.oracle[i]+my.sumstat[j,"beta"]*my.G[i,j] 
+  my.PRS.oracle.STD=(my.PRS.oracle-mean(my.PRS.oracle))/sqrt(var(my.PRS.oracle))
+    
+  # PRS for the different alpha levels
+  my.PRS.alpha=matrix(0,nrow=my.nsample,ncol=length(alpha.level))
+  my.PRS.alpha.STD=matrix(0,nrow=my.nsample,ncol=length(alpha.level))
+  my.PRS.J.info=matrix(0,nrow=length(alpha.level),ncol=4) 
+  colnames(my.PRS.J.info)=c("alpha","J","TP","FP")
+  my.PRS.J.info[,1]=alpha.level
+  
+  for(k in 1:length(alpha.level)) {
+    # J index & beta.hat from the external data
+    ex.J.index=which(ex.sumstat[,"p.value"]<=alpha.level[k])
+    # in case there are no significant SNPs in the external data
+    if (length(ex.J.index)>1) {
+      my.PRS.J.info[k,2]=length(ex.J.index) 
+      my.PRS.J.info[k,3]=length(which(ex.J.index<=my.nsnp.true)) # codes not adaptive as it assumes that ex and my SNPs are matched and the first my.nsnp.true SNPs are the true SNPs
+      my.PRS.J.info[k,4]=length(which(ex.J.index>my.nsnp.true))
+      
+      for (i in 1:my.nsample) 
+        for (j in 1:length(ex.J.index)) 
+          my.PRS.alpha[i,k]=my.PRS.alpha[i,k]+ex.sumstat[ex.J.index[j],"beta.hat"]*my.G[i,ex.J.index[j]]  # pay attention to the use of ex. and my.
+
+      my.PRS.alpha.STD[,k]=(my.PRS.alpha[,k]-mean(my.PRS.alpha[,k]))/sqrt(var(my.PRS.alpha[,k]))
+    }
+  }
+
+  # the liability threshold applied to the standardized my.Y
+  my.case.index=which(my.Y.STD>l.threshold)
+  my.control.index=which(my.Y.STD<=l.threshold)
+  my.color.index=rep("black",my.nsample); my.color.index[my.case.index]="red"
+  # for ROC and AUC later
+  my.Y.cc=rep("0-Control",my.nsample); my.Y.cc[my.case.index]="1-Case"
+  my.ncase=sum(my.Y.cc=="1-Case") # total number of cases
+  my.ncontrol=sum(my.Y.cc=="0-Control") # total number of controls
+
+  my.PRS.output$my.PRS.oracle=my.PRS.oracle
+  my.PRS.output$my.PRS.oracle.STD=my.PRS.oracle.STD
+  my.PRS.output$my.PRS.alpha=my.PRS.alpha
+  my.PRS.output$my.PRS.alpha.STD=my.PRS.alpha.STD
+  my.PRS.output$my.PRS.J.info=my.PRS.J.info
+  
+  my.PRS.output$my.Y.cc=my.Y.cc 
+  my.PRS.output$my.ncase=my.ncase
+  my.PRS.output$my.ncontrol=my.ncontrol
+  my.PRS.output$my.color.index=my.color.index
+  my.PRS.output$my.case.index=my.case.index
+  
+  return(my.PRS.output) 
+}
+```
+
+## \footnotesize Recall alpha level, liability threshold and PRS calculation 
+
+\scriptsize
+```{r,echo=TRUE,out.width = '50%',fig.align = "center"}
+
+# the alphal level used on the external data
+alpha.level=c((0.05/ex.nsnp),0.01,0.1) 
+
+# the liability threshold on the my.Y.STD scale
+l.threshold=1 
+
+my.PRS.output=generate.my.PRS.output(ex.sumstat,my.data,alpha.level,l.threshold)
+```
+
+
+## \footnotesize Recall the association performance of the different PRSs (and adding $\alpha=0.1$)
+\tiny  
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+generate.association.plot=function(my.PRS.output){
+  
+  my.PRS.oracle.STD=my.PRS.output$my.PRS.oracle.STD
+  my.PRS.alpha.STD=my.PRS.output$my.PRS.alpha.STD
+  my.color.index=my.PRS.output$my.color.index
+  my.Y.STD=my.data$my.Y.STD
+  my.PRS.J.info=my.PRS.output$my.PRS.J.info
+  my.ncase=my.PRS.output$my.ncase
+  my.ncontrol=my.PRS.output$my.ncontrol
+  
+  par(mfrow=c(1,4))
+  temp=matrix(0, nrow=(length(alpha.level)+1),ncol=4)
+  
+  # the orcale one
+  plot(my.PRS.oracle.STD,my.Y.STD,col=my.color.index,xlab="Oracle")
+  fit=lm(my.Y.STD~my.PRS.oracle.STD);abline(a=fit$coef[1],b=fit$coef[2],lty=2)
+temp[1,]=summary(fit)$coefficients[2,]
+
+  # the alpha ones
+  for(k in 1:length(alpha.level)){
+    if (my.PRS.J.info[k,2]>0) {
+      plot(my.PRS.alpha.STD[,k],my.Y.STD,col=my.color.index,xlab=paste("alpha=",alpha.level[k]))
+      fit=lm(my.Y.STD~my.PRS.alpha.STD[,k]);abline(a=fit$coef[1],b=fit$coef[2],lty=2)
+      temp[k+1,]=summary(fit)$coefficients[2,] # the first one for oracle
+    }
+    else {
+      plot(my.PRS.alpha.STD[,k],my.Y.STD,col=my.color.index,xlab=paste("alpha=",alpha.level[k]))
+      temp[k+1,]=c(-9,-9,-9,-9)
+    }
+  }
+
+  temp=rbind(c("slope.hat", round(temp[,1],3)), c("Z.value", round(temp[,3],3)), c("p.value", signif(temp[,4],digits=4)),c("n, case, control", (my.ncase+my.ncontrol), my.ncase, my.ncontrol, " "))
+  print(temp)
+}
+```
+
+\tiny  
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+generate.association.plot(my.PRS.output)
+```
+
+## \footnotesize Recall the prediction performance of the PRSs
+
+\tiny
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+generate.ss.ROC.AUC=function(my.PRS.output,PRS.STD.input) {
+
+  ss.ROC.AUC=list()
+  
+  my.Y.cc=my.PRS.output$my.Y.cc
+  my.ncase=my.PRS.output$my.ncase
+  my.ncontrol=my.PRS.output$my.ncontrol
+  
+  PRS=PRS.STD.input
+  
+  a=seq(4,-2.5,by=-0.5) # the range for calling Positives 
+  P=rep(-9,length(a));TP=rep(-9,length(a));FP=rep(-9,length(a))
+  sensitivity=rep(-9,length(a)); specificity.1=rep(-9,length(a))
+
+  for (k in 1:length(a)) {
+    PRS.threshold=a[k]
+    P[k]=sum(PRS>PRS.threshold)
+    TP[k]=sum(my.Y.cc[PRS>PRS.threshold]=="1-Case")
+    FP[k]=sum(my.Y.cc[PRS>PRS.threshold]=="0-Control")
+    sensitivity[k]=TP[k]/my.ncase
+    specificity.1[k]=FP[k]/my.ncontrol
+  }
+
+  auc=0
+  for (k in 2:length(a)) # Trapezoid's method height*(base1+base2)/2
+    auc = auc + (specificity.1[k]-specificity.1[k-1])*(sensitivity[k]+sensitivity[k-1])/2
+
+  ss.ROC.AUC$sensitivity=sensitivity
+  ss.ROC.AUC$specificity.1=specificity.1
+  ss.ROC.AUC$auc=auc
+
+  return(ss.ROC.AUC)
+}
+```
+
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+generate.ROC.plot=function(my.PRS.output) {
+
+  my.PRS.output=my.PRS.output
+  
+  my.PRS.oracle.STD=my.PRS.output$my.PRS.oracle.STD
+  my.PRS.alpha.STD=my.PRS.output$my.PRS.alpha.STD
+  my.PRS.J.info=my.PRS.output$my.PRS.J.info
+  
+  method=c("PRS.oracle (0.769)","PRS.gw (0.713)","PRS.01 (0.653)","PRS.1 (0.604)") # This is not adaptive
+  auc.method=rep(0,(length(alpha.level)+1)) # the first one is for oracle
+  
+  ss.ROC.AUC=generate.ss.ROC.AUC(my.PRS.output,my.PRS.oracle.STD)
+  plot(ss.ROC.AUC$specificity.1,ss.ROC.AUC$sensitivity,type="b",pch=20,col="grey",xlab="1 - Specificity = False Positives/ncontrols",ylab="Sensitivity = True Positives/ncases")
+  abline(0,1)
+  auc.method[1]=ss.ROC.AUC$auc
+
+  alpha.level.k=1
+  if (my.PRS.J.info[alpha.level.k,2]>0) {
+    ss.ROC.AUC=generate.ss.ROC.AUC(my.PRS.output,my.PRS.alpha.STD[,alpha.level.k])
+    lines(ss.ROC.AUC$specificity.1,ss.ROC.AUC$sensitivity,type="b",pch=20,col="red")
+    auc.method[alpha.level.k+1]=ss.ROC.AUC$auc
+  } else {
+    abline(0,1,col="red")
+    auc.method[alpha.level.k+1]=0.5
+  }
+
+  alpha.level.k=2
+  if (my.PRS.J.info[alpha.level.k,2]>0) {
+    ss.ROC.AUC=generate.ss.ROC.AUC(my.PRS.output,my.PRS.alpha.STD[,alpha.level.k])
+    lines(ss.ROC.AUC$specificity.1,ss.ROC.AUC$sensitivity,type="b",pch=20,col="blue")
+    auc.method[alpha.level.k+1]=ss.ROC.AUC$auc
+  } else {
+    abline(0,1,col="blue")
+    auc.method[alpha.level.k+1]=0.5
+  }
+
+  alpha.level.k=3
+  if (my.PRS.J.info[alpha.level.k,2]>0) {
+    ss.ROC.AUC=generate.ss.ROC.AUC(my.PRS.output,my.PRS.alpha.STD[,alpha.level.k])
+    lines(ss.ROC.AUC$specificity.1,ss.ROC.AUC$sensitivity,type="b",pch=20,col="green")
+    auc.method[alpha.level.k+1]=ss.ROC.AUC$auc
+  } else {
+    abline(0,1,col="green")
+    auc.method[alpha.level.k+1]=0.5
+  }
+
+  legend(0.6, 0.37, paste(round(auc.method,3),method), lty=1, lwd=2, col=c("grey","red","blue","green"),cex=1.3)
+
+  print(my.PRS.J.info)
+}
+```
+
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+generate.ROC.plot(my.PRS.output)
+```  
+
+## To make the lecture notes self-sufficient, first
+
+- Exam the expected effects of n.external and beta on AUC: 
+  
+   AUC $\uparrow$ as $n_{ex} \uparrow$ (Quiz: effect of $n_{my}$?)   
+      
+   AUC $\uparrow$ as $\beta \uparrow$ (assume $\beta_{ex}=\beta_{my}$) 
+\vspace{12pt}
+
+- Also ask some less obvious questions.
+
+## Increase $n_{ex}$ from 1000 to 2000
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+# external data
+ex.nsample=1000*2 # HERE IS THE CHANGE
+ex.nsnp=5000;ex.nsnp.true=10;ex.beta.true=0.3;ex.sigma=1;ex.seed=101
+ex.sumstat=generate.ex.sumstat(ex.seed,ex.nsample,ex.nsnp,ex.nsnp.true,ex.beta.true,ex.sigma)
+# my data
+my.nsnp.true=10; my.beta.true=0.3; my.maf=ex.sumstat[,"MAF"] 
+my.nsample=1000; my.nsnp=5000; my.sigma=1;my.seed=102
+my.data=generate.my.data(my.seed,my.nsample,my.nsnp,my.nsnp.true,my.beta.true,my.sigma,my.maf)
+```
+
+```{r,echo=FALSE,out.width = '70%',fig.align = "center"}
+# generate the ROC plots
+alpha.level=c((0.05/ex.nsnp),0.01,0.1)
+l.threshold=1 
+my.PRS.output=generate.my.PRS.output(ex.sumstat,my.data,alpha.level,l.threshold)
+generate.ROC.plot(my.PRS.output)
+```
+
+## Some interesting Qs  
+\small
+- Why PRS.oracle stayed the same?  
+\vspace{8pt}
+
+- Why J of PRS.01 dropped from 66 to 58, when $n$ increased from 1000 to 2000? Did we make a mistake?  
+(Hint: $E(J)=10+5000*0.01=60$ when $n\to \infty$)
+\vspace{8pt}
+
+- Why AUC of PRS.01 dropped from 0.653 to 0.652, when $n$ increased from 1000 to 2000? Did we make a mistake?  
+\vspace{3pt}
+
+- Why AUC of PRS.1 dropped from 0.604 to 0.594, when $n$ increased from 1000 to 2000? Did we make a mistake?  
+\vspace{8pt}
+
+- How large the $n$ has to be before AUC of PRS.gw say $>80\%$? Is this even possible?! 
+\vspace{8pt}
+
+\color{red} Live Quiz 2: If $n=500$, the AUC of PRS.gw will drop from 0.713 to  
+
+A: <0.6  
+B: ~0.5  
+C: <0.5  
+
+## When $n_{ex}=500$, no signficant SNPs to construct PRS.gw!
+
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+# external data
+ex.nsample=1000/2 # HERE IS THE CHANGE
+ex.nsnp=5000;ex.nsnp.true=10;ex.beta.true=0.3;ex.sigma=1;ex.seed=101
+ex.sumstat=generate.ex.sumstat(ex.seed,ex.nsample,ex.nsnp,ex.nsnp.true,ex.beta.true,ex.sigma)
+# my data
+my.nsnp.true=10; my.beta.true=0.3; my.maf=ex.sumstat[,"MAF"]
+my.nsample=1000; my.nsnp=5000; my.sigma=1; my.seed=102
+my.data=generate.my.data(my.seed,my.nsample,my.nsnp,my.nsnp.true,my.beta.true,my.sigma,my.maf)
+```
+
+```{r,echo=FALSE,out.width = '70%',fig.align = "center"}
+# generate the ROC plots
+my.PRS.output=generate.my.PRS.output(ex.sumstat,my.data,alpha.level,l.threshold)
+generate.ROC.plot(my.PRS.output)
+```
+
+## This can be `achieved' by reducing $\beta$ while keep $n_{ex}=1000$ (But PRS.Oracle will drop as model changed)
+
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+# external data
+ex.beta.true=0.3/2 # HERE IS THE CHANGE
+ex.nsample=1000; ex.nsnp=5000;ex.nsnp.true=10;ex.sigma=1;ex.seed=101
+ex.sumstat=generate.ex.sumstat(ex.seed,ex.nsample,ex.nsnp,ex.nsnp.true,ex.beta.true,ex.sigma)
+# my data
+my.beta.true=0.3/2 # FOR THE MOMENT, NO HETEROGENEITY
+my.nsnp.true=10; my.maf=ex.sumstat[,"MAF"];my.nsample=1000; my.nsnp=5000; my.sigma=1;my.seed=102
+my.data=generate.my.data(my.seed,my.nsample,my.nsnp,my.nsnp.true,my.beta.true,my.sigma,my.maf)
+```
+
+```{r,echo=FALSE,out.width = '60%',fig.align = "center"}
+# generate the ROC plots
+my.PRS.output=generate.my.PRS.output(ex.sumstat,my.data,alpha.level,l.threshold)
+generate.ROC.plot(my.PRS.output)
+```
+
+## 
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+ex.sumstat[1:13,]
+```
+\vspace{6pt}  
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+my.data$my.sumstat[1:13,]
+```
+
+## The association perspective: reduced as expected
+\tiny  
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+generate.association.plot(my.PRS.output)
+```
+
+## The other way around: increase $\beta$ while keep $n_{ex}=1000$
+
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+# external data
+ex.beta.true=0.3*2 # HERE IS THE CHANGE
+ex.nsample=1000; ex.nsnp=5000;ex.nsnp.true=10;ex.sigma=1;ex.seed=101
+ex.sumstat=generate.ex.sumstat(ex.seed,ex.nsample,ex.nsnp,ex.nsnp.true,ex.beta.true,ex.sigma)
+# my data
+my.beta.true=0.3*2 # FOR THE MOMENT, NO HETEROGENEITY
+my.nsnp.true=10; my.maf=ex.sumstat[,"MAF"]; my.nsample=1000; my.nsnp=5000; my.sigma=1;my.seed=102
+my.data=generate.my.data(my.seed,my.nsample,my.nsnp,my.nsnp.true,my.beta.true,my.sigma,my.maf)
+```
+
+```{r,echo=FALSE,out.width = '70%',fig.align = "center"}
+# generate the ROC plots
+my.PRS.output=generate.my.PRS.output(ex.sumstat,my.data,alpha.level,l.threshold)
+generate.ROC.plot(my.PRS.output)
+```
+
+## 
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+ex.sumstat[1:13,]
+```
+\vspace{6pt}  
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+my.data$my.sumstat[1:13,]
+```
+
+## The association perspective: improved as expected
+\tiny  
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+generate.association.plot(my.PRS.output)
+```
+
+## Keep $\beta=0.3$ and $n_{ex}=1000$, but DECREASE $\sigma$
+
+\color{red} Live Quiz 3: compared with beta=0.6, sigma =1,  
+AUC of beta=0.3, sigma =0.5 will be
+
+
+A: smaller  
+B: larger  
+C: ~same  
+D: identical
+
+## 
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+# external data
+ex.sigma=0.5 # HERE IS THE CHANGE
+ex.beta.true=0.3; ex.nsample=1000; ex.nsnp=5000;ex.nsnp.true=10;ex.seed=101
+ex.sumstat=generate.ex.sumstat(ex.seed,ex.nsample,ex.nsnp,ex.nsnp.true,ex.beta.true,ex.sigma)
+# my data
+my.sigma=0.5 # no heterogeneity 
+my.beta.true=0.3;my.nsnp.true=10; my.maf=ex.sumstat[,"MAF"];my.nsample=1000; my.nsnp=5000;my.seed=102
+my.data=generate.my.data(my.seed,my.nsample,my.nsnp,my.nsnp.true,my.beta.true,my.sigma,my.maf)
+```
+
+```{r,echo=FALSE,out.width = '70%',fig.align = "center"}
+# generate the ROC plots
+my.PRS.output=generate.my.PRS.output(ex.sumstat,my.data,alpha.level,l.threshold)
+generate.ROC.plot(my.PRS.output)
+```
+
+## 
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+ex.sumstat[1:13,]
+```
+\vspace{6pt}
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+my.data$my.sumstat[1:13,]
+```
+
+## Why identical results: puzzling?! 
+
+**Hint/Solution in the heritability formula:**
+
+\small
+
+$$ 
+\begin{aligned}
+\text{(narrow) } h^2&=\frac{V_G}{V_G+V_e}\\
+&=\frac{{\sum_j^{J} \beta_j^2 2p_j(1-p_j)}}{\sum_j^{J}  \beta_j^2 2p_j(1-p_j)+\sigma^2}\\
+&=\frac{{\sum_j^{J} (\frac{\beta_j}{2})^2 2p_j(1-p_j)}}{\sum_j^{J}  (\frac{\beta_j}{2})^2 2p_j(1-p_j)+(\frac{\sigma}{2})^2}
+\end{aligned}
+$$  
+
+## Now consider a `more polygenic' model
+\vspace{-6pt}
+
+\small
+**ex.beta.true from 0.3 to 0.1 but ex.nsnp.true from 10 to 90**
+
+-  $h^2$ and SNP $h^2$? Answers in the $h^2$ expression below:
+$$\text{(narrow) } h^2=\frac{V_G}{V_G+V_e}=\frac{\sum_j \beta_j^2 Var(G_j)}{Var(Y)}=\frac{{\sum_j \beta_j^2 2p_j(1-p_j)}}{\sum_j \beta_j^2 2p_j(1-p_j)+\sigma^2}.$$
+
+-  AUC in general?
+-  AUC between PRS.gw and PRS.01?
+\vspace{6pt}
+
+\color{red}Live Quiz 4: Compared with 10 SNPs with beta=0.3,  
+the trait h2 of 90 SNPs with beta=0.1 will  
+
+A: decrease  
+B: increase   
+C: ~same   
+D: identical  
+
+## The `more polygenic' model: 90 signals each with $\beta=0.1$
+
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+# external data
+ex.nsnp.true=90; ex.beta.true=0.1 # HERE IS THE CHANGE
+ex.nsample=1000; ex.nsnp=5000;ex.sigma=1; ex.seed=101
+ex.sumstat=generate.ex.sumstat(ex.seed,ex.nsample,ex.nsnp,ex.nsnp.true,ex.beta.true,ex.sigma)
+
+# my data
+my.nsnp.true=90; my.beta.true=0.1;my.maf=ex.sumstat[,"MAF"] #NO HETEROGENEITY
+my.nsample=1000; my.nsnp=5000; my.sigma=1;my.seed=102
+my.data=generate.my.data(my.seed,my.nsample,my.nsnp,my.nsnp.true,my.beta.true,my.sigma,my.maf)
+```
+
+##  
+\small
+**Total $h^2$**  (=0.243 for the previous model)  
+\tiny
+```{r,echo=FALSE}
+V.G=sum(ex.sumstat[1:ex.nsnp.true,"beta"]^2*(2*ex.sumstat[1:ex.nsnp.true,"MAF"]*(1-ex.sumstat[1:ex.nsnp.true,"MAF"])))
+V.e=ex.sigma^2
+round(V.G/(V.G+V.e),3)
+```
+\vspace{1pt}
+\footnotesize (would be identical if the MAFs of the 10 causal SNPs in the previous model were duplicated eight times for the additional 80 causal SNPs.)  
+
+\vspace{12pt}
+\small
+**Heritability of GWAS SNPs** (In the previous model, the first 10 SNPs
+\tiny
+have ${ }h^2 { }$: 0.023 ${ }$ 0.009 ${ }$ 0.032 ${ }$ 0.031 ${ }$ 0.019 ${ }$ 0.021 ${ }$ 0.029 ${ }$ 0.022 ${ }$ 0.030 ${ }$ 0.028)
+```{r,echo=FALSE}
+V.G.loci=ex.sumstat[1:ex.nsnp.true,"beta"]^2*(2*ex.sumstat[1:ex.nsnp.true,"MAF"]*(1-ex.sumstat[1:ex.nsnp.true,"MAF"]))
+round(V.G.loci/(V.G+V.e),3)
+```
+
+\small
+**an exact factor of $(\frac{0.3}{0.1})^2=9$ for the first 10 SNPs, up to some rounding errors**
+
+## 
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+ex.sumstat[1:13,]
+```
+\vspace{6pt}
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+my.data$my.sumstat[1:13,]
+```
+
+## As expected
+\vspace{-3pt}
+
+\small
+All PRS's performance dropped considerably  
+\footnotesize (with the exception of Oracle, which depends on the SUM of $\beta_j^2(2p_j(1-p_j))$)   
+\vspace{6pt}
+
+\small
+Between PRS.01 and PRS.1, Which one is better? 
+\vspace{6pt}
+
+\tiny
+```{r,echo=FALSE,out.width = '70%',fig.align = "center"}
+# generate the ROC plots
+my.PRS.output=generate.my.PRS.output(ex.sumstat,my.data,alpha.level,l.threshold)
+generate.ROC.plot(my.PRS.output)
+```
+
+## \footnotesize The association perspective: reduced as expected
+\tiny  
+```{r,echo=FALSE,out.width = '90%',fig.align = "center"}
+generate.association.plot(my.PRS.output)
+```
+
+## A demonstration of sampling variation: my.seed=104 
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+# external data
+ex.nsnp.true=90; ex.beta.true=0.1 
+ex.nsample=1000; ex.nsnp=5000;ex.sigma=1; ex.seed=101 
+ex.sumstat=generate.ex.sumstat(ex.seed,ex.nsample,ex.nsnp,ex.nsnp.true,ex.beta.true,ex.sigma)
+# my data
+my.nsnp.true=90; my.beta.true=0.1;my.maf=ex.sumstat[,"MAF"]
+my.nsample=1000; my.nsnp=5000; my.sigma=1;my.seed=104 # HERE IS THE CHANGE
+my.data=generate.my.data(my.seed,my.nsample,my.nsnp,my.nsnp.true,my.beta.true,my.sigma,my.maf)
+```
+
+\tiny
+```{r,echo=FALSE,out.width = '70%',fig.align = "center"}
+# generate the ROC plots
+my.PRS.output=generate.my.PRS.output(ex.sumstat,my.data,alpha.level,l.threshold)
+generate.ROC.plot(my.PRS.output)
+```
+
+## 
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+ex.sumstat[1:13,]
+```
+\vspace{6pt}
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+my.data$my.sumstat[1:13,]
+```
+
+
+## The message is clear
+
+\scriptsize
+
+**Don't claim AUC.1=0.575 is better than AUC.01=0.565 from a single run!**
+
+**Don't claim AUC.01=0.614 is better than ACU.1=0.536 from a single run either!**
+
+## The same 90 and $\beta=0.1$ model, but $n_{ex}=2000$
+
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+# external data
+ex.nsample=2000 # HERE IS THE CHANGE
+ex.nsnp.true=90; ex.beta.true=0.1; ex.nsnp=5000;ex.sigma=1; ex.seed=101 
+ex.sumstat=generate.ex.sumstat(ex.seed,ex.nsample,ex.nsnp,ex.nsnp.true,ex.beta.true,ex.sigma)
+# my data
+my.nsnp.true=90; my.beta.true=0.1;my.maf=ex.sumstat[,"MAF"]
+my.nsample=1000; my.nsnp=5000; my.sigma=1;my.seed=102 
+my.data=generate.my.data(my.seed,my.nsample,my.nsnp,my.nsnp.true,my.beta.true,my.sigma,my.maf)
+```
+
+\tiny
+```{r,echo=FALSE,out.width = '70%',fig.align = "center"}
+# generate the ROC plots
+my.PRS.output=generate.my.PRS.output(ex.sumstat,my.data,alpha.level,l.threshold)
+generate.ROC.plot(my.PRS.output)
+```
+
+## 
+\tiny
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+ex.sumstat[1:13,]
+```
+\vspace{6pt}
+```{r,echo=TRUE,out.width = '70%',fig.align = "center"}
+my.data$my.sumstat[1:13,]
+```
+
+
+## Increased performance as expected, but with some interesting observations
+
+Increase $n_{ex}$ from 1000 to 2000 did not balance out the drop of $\beta$ from 0.3 to 0.1: still no SNPs with p values less than $10^{-5}$.   
+\vspace{12pt}
+
+\small Quiz: how large the $n$ should be to achieve similar performance with the earlier model of 10 SNPs, $\beta=0.3$ and $n_{ex}=2000$?    
+(More efficient R codes needed to demonstrate this empirically.)    
+(Analytical hint: $h^2 \propto \beta^2$ and $s.e. \propto \sqrt{n}$)  
+\vspace{12pt}
+
+\small
+Another example of `more is NOT always better':   
+   AUC of PRS$_{0.01}$ (40+48=88 SNPs; 0.625) and   
+   AUC of PRS$_{0.1}$ (69+465=534 SNPs; 0.610) are practically the same.
+
+## Recap the goal of this lecture, a **deeper** understanding of
+
+\small
+\begin{itemize}
+\item Effects of ex.nsample and ex.beta.true on AUC: easy to answer.
+\item Answers to these Qs are less obvious: {\bf If we decrease ex.beta.true from 0.3 to 0.1 but increase ex.nsnp.true from 10 to 90},
+\item[] \hspace{6pt} $h^2$ and SNP $h^2$?
+\item[] \hspace{6pt} AUC in general?
+\item[] \hspace{6pt} AUC between PRS.gw and PRS.01?
+\end{itemize}
+\vspace{14pt}
+
+What's next: Effects of various (population and locus) **heterogeneities**, and the importance of reference allele (and genome build) matching.
+\begin{itemize}
+\item my.reference.allele $\neq$ reference.allele
+\item my.maf $\neq$ ex.maf
+\item my.beta.true $\neq$ ex.beta.true
+\item my.nsnp.true $\neq$ ex.nsnp.true
+\end{itemize}
