@@ -10,7 +10,7 @@
 - PRS-401-heterogeneity: heterogeneity and transportabiliy  
 - PRS-501-LD: linkage disequilibrium  
 
-Both .pdf and the source .Rmd files are available for reproducible research and education! ### Please let us know if you identify any coding errors.   
+Both .pdf and the source .Rmd files are available for reproducible research and education! **Please let us know if you identify any coding errors**.   
 
 ### For Advanced PRS, there are also six sets of slides, including  
 - adv-PRS-real-life-Q&A by Dr. Delnaz Roshandel https://ca.linkedin.com/in/delnaz-roshandel-2ba50952
