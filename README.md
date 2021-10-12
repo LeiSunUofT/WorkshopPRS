@@ -25,3 +25,6 @@ Developed by [Dr. Lei Sun](http://www.utstat.toronto.edu/sun/), [Dr. Wei Deng](h
 ### There is also a (restricted) hands-on session (TBA)
 - developed by [Dr. Vanessa Goncalves](https://www.psychiatry.utoronto.ca/faculty/vanessa-f-gon%C3%A7alves), [Dr. Arun Tiwari](https://www.psychiatry.utoronto.ca/faculty/arun-tiwari) and [Dr. Clement Zai](https://lmp.utoronto.ca/faculty/clement-zai)
 
+
+### Finally, recording of the presentations are available for a year, if you have registered for the IGES workshop or to register at [International Genetic Epidemiology Society IGES Educational Workshop](https://iges.memberclicks.net/2020-educational-workshop). 
+
