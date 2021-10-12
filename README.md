@@ -22,8 +22,8 @@ Developed by [Dr. Lei Sun](http://www.utstat.toronto.edu/sun/), [Dr. Wei Deng](h
 - adv-PRS-MR-causal, [Dr. Linbo Wang](https://sites.google.com/site/linbowangpku/home)
 - adv-PRS-clinical-implication, [Dr. Andrew Paterson](https://www.sickkids.ca/en/staff/p/andrew-paterson/)
 
-### There is also a (restricted) hands-on session (TBA)
-- developed by [Dr. Vanessa Goncalves](https://www.psychiatry.utoronto.ca/faculty/vanessa-f-gon%C3%A7alves), [Dr. Arun Tiwari](https://www.psychiatry.utoronto.ca/faculty/arun-tiwari) and [Dr. Clement Zai](https://lmp.utoronto.ca/faculty/clement-zai)
+### There was also a (restricted) hands-on session 
+- [the instruction manual](https://kcniconfluence.camh.ca/display/GEN/Tutorial+for+Polygenic+Risk+Score), [Dr. Vanessa Goncalves](https://www.psychiatry.utoronto.ca/faculty/vanessa-f-gon%C3%A7alves), [Dr. Arun Tiwari](https://www.psychiatry.utoronto.ca/faculty/arun-tiwari) and [Dr. Clement Zai](https://lmp.utoronto.ca/faculty/clement-zai)
 
 
 ### Finally, recording of the presentations are available for a year, if you have registered for the IGES workshop [International Genetic Epidemiology Society IGES Educational Workshop](https://iges.memberclicks.net/2020-educational-workshop). 
