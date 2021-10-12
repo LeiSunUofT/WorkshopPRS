@@ -13,12 +13,12 @@
 
 
 ### For Advanced PRS, there are also six sets of slides, including  
-- adv-PRS-real-life-Q&A by Dr. Delnaz Roshandel https://ca.linkedin.com/in/delnaz-roshandel-2ba50952
-- adv-PRS-Xchr by Dr. Wei Deng https://github.com/WeiAkaneDeng
-- adv-PRS-longitudinal by Dr. Laurent Briollais https://www.lunenfeld.ca/?page=briollais-laurent
-- adv-PRS-application by Dr. Jennifer Brooks https://www.dlsph.utoronto.ca/faculty-profile/brooks-jennifer/
-- adv-PRS-MR-causal by Dr. Linbo Wang https://sites.google.com/site/linbowangpku/home
-- adv-PRS-clinical-implication by Dr. Andrew Paterson https://www.sickkids.ca/en/staff/p/andrew-paterson/
+- adv-PRS-real-life-Q&A by [Dr. Delnaz Roshandel](https://ca.linkedin.com/in/delnaz-roshandel-2ba50952)
+- adv-PRS-Xchr by [Dr. Wei Deng](https://github.com/WeiAkaneDeng)
+- adv-PRS-longitudinal by [Dr. Laurent Briollais](https://www.lunenfeld.ca/?page=briollais-laurent)
+- adv-PRS-application by [Dr. Jennifer Brooks](https://www.dlsph.utoronto.ca/faculty-profile/brooks-jennifer/)
+- adv-PRS-MR-causal by [Dr. Linbo Wang](https://sites.google.com/site/linbowangpku/home)
+- adv-PRS-clinical-implication by [Dr. Andrew Paterson](https://www.sickkids.ca/en/staff/p/andrew-paterson/)
 
 
 
