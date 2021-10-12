@@ -2,8 +2,9 @@
 
 ## The materials were developed by our PRS research team funded by the [University of Toronto Mclaughlin Centre](http://www.mclaughlin.utoronto.ca/). The workshop was first offered in May 2021 locally in Toronto, then presented at the International Genetic Epidemiology Society IGES Educational Workshop in Oct 2021.
 
-### For Statistical Fundamentals of PRS, there are six sets of slides, including  
-(Both .pdf and the source .Rmd files are available for reproducible research and education! **Please let us know if you identify any coding errors**.)  
+### For Statistical Fundamentals of PRS, there are six sets of slides.   
+Both .pdf and the source .Rmd files are available for reproducible research and education. **Please let us know if you identify any coding errors**.  
+Developed by [Dr. Lei Sun](http://www.utstat.toronto.edu/sun/), [Dr. Wei Deng](https://github.com/WeiAkaneDeng), and [Dr. Yanyan Zhao](https://sites.google.com/view/yanyan-zhao). 
 - PRS-001-overview: a topic-stratified PRS reference list  
 - PRS-101-foundation: GWAS, h^2 and prediction  
 - PRS-201-basic: PRS calculation and performance evaluation   
@@ -12,7 +13,7 @@
 - PRS-501-LD: linkage disequilibrium  
 
 
-### For Advanced PRS, there are also six sets of slides, including  
+### For Advanced PRS, there are also six sets of slides.
 - adv-PRS-real-life-Q&A, [Dr. Delnaz Roshandel](https://ca.linkedin.com/in/delnaz-roshandel-2ba50952)
 - adv-PRS-Xchr, [Dr. Wei Deng](https://github.com/WeiAkaneDeng)
 - adv-PRS-longitudinal, [Dr. Laurent Briollais](https://www.lunenfeld.ca/?page=briollais-laurent)
