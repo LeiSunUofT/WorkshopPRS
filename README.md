@@ -1,6 +1,6 @@
 # WorkshopPRS 2021
 
-## The materials are developed by our PRS research team funded by the University of Toronto Mclaughlin Centre. The workshop was first offered in May 2021 locally in Toronto, then presented at the International Genetic Epidemiology Society IGES Educational Workshop in Oct 2021.
+## The materials were developed by our PRS research team funded by the [University of Toronto Mclaughlin Centre](http://www.mclaughlin.utoronto.ca/). The workshop was first offered in May 2021 locally in Toronto, then presented at the International Genetic Epidemiology Society IGES Educational Workshop in Oct 2021.
 
 ### For Statistical Fundamentals of PRS, there are six sets of slides, including  
 (Both .pdf and the source .Rmd files are available for reproducible research and education! **Please let us know if you identify any coding errors**.)  
